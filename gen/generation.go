@@ -58,7 +58,8 @@ func newGeneration(dir string, typeNames []string) *generation {
 		inputDir:    dir,
 		visitations: make(map[string]*visitation),
 		writeCloser: func(name string) (io.WriteCloser, error) {
-			return os.OpenFile(name, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+			path := filepath.Join(dir, name)
+			return os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
 		},
 	}
 	for _, name := range typeNames {
