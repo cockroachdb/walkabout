@@ -44,12 +44,15 @@ type implementor struct {
 	Underlying namedStruct
 }
 
-// TypeId generates a reasonable description of a type.
+// TypeId generates a reasonable description of a type. Generated tokens
+// are attached to the underlying visitation so that we can be sure
+// to actually generate them in a subsequent pass.
 //   *Foo -> FooPtr
 //   []Foo -> FooSlice
 //   []*Foo -> FooPtrSlice
 //   *[]Foo -> FooSlicePtr
 func typeId(i visitableType) string {
+	org := i
 	suffix := ""
 	for {
 		switch t := i.(type) {
@@ -62,7 +65,9 @@ func typeId(i visitableType) string {
 		case namedVisitableType:
 			i = t.Underlying
 		default:
-			return fmt.Sprintf("%sType%s%s", t.Visitation().Intf, t, suffix)
+			ret := fmt.Sprintf("%sType%s%s", t.Visitation().Intf, t, suffix)
+			org.Visitation().TypeIds[ret] = org
+			return ret
 		}
 	}
 }
@@ -91,7 +96,7 @@ var funcMap = template.FuncMap{
 	"Intfs": func(v *visitation) map[string]namedInterfaceType {
 		ret := make(map[string]namedInterfaceType)
 		for _, t := range v.TypeIds {
-			if s, ok := t.(namedInterfaceType); ok {
+			if s, ok := t.Implementation().(namedInterfaceType); ok {
 				ret[t.String()] = s
 			}
 		}
@@ -115,7 +120,7 @@ var funcMap = template.FuncMap{
 	"Slices": func(v *visitation) map[string]namedSliceType {
 		ret := make(map[string]namedSliceType)
 		for _, t := range v.TypeIds {
-			if s, ok := t.(namedSliceType); ok {
+			if s, ok := t.Implementation().(namedSliceType); ok {
 				ret[t.String()] = s
 			}
 		}
@@ -127,7 +132,7 @@ var funcMap = template.FuncMap{
 	"Pointers": func(v *visitation) map[string]pointerType {
 		ret := make(map[string]pointerType)
 		for _, t := range v.TypeIds {
-			if ptr, ok := t.(pointerType); ok {
+			if ptr, ok := t.Implementation().(pointerType); ok {
 				ret[t.String()] = ptr
 			}
 		}

@@ -36,6 +36,9 @@ const (
 //	* a named visitable type; e.g. "type Foos []Foo"
 //	* TODO: a map of visitable types?
 type visitableType interface {
+	// Implementation returns the underlying type that we actually
+	// need to be able to traverse.
+	Implementation() visitableType
 	// String must return a codegen-safe representation of the type.
 	String() string
 	Visitation() *visitation
@@ -57,6 +60,11 @@ type namedVisitableType struct {
 	Underlying visitableType
 }
 
+// Implementation returns the underlying type's implementation.
+func (t namedVisitableType) Implementation() visitableType {
+	return t.Underlying.Implementation()
+}
+
 // String is codegen-safe.
 func (t namedVisitableType) String() string {
 	return t.Obj().Name()
@@ -74,6 +82,11 @@ type namedInterfaceType struct {
 	v *visitation
 }
 
+// Implementation returns the receiver.
+func (t namedInterfaceType) Implementation() visitableType {
+	return t
+}
+
 // String is codegen-safe.
 func (t namedInterfaceType) String() string {
 	return t.Obj().Name()
@@ -87,6 +100,11 @@ func (t namedInterfaceType) Visitation() *visitation {
 // pointerType is a pointer to a visitableType.
 type pointerType struct {
 	Elem visitableType
+}
+
+// Implementation returns the receiver.
+func (t pointerType) Implementation() visitableType {
+	return t
 }
 
 // String is codegen-safe.
@@ -104,7 +122,10 @@ type namedSliceType struct {
 	Elem visitableType
 }
 
-func (namedSliceType) isVisitable() {}
+// Implementation returns the receiver.
+func (t namedSliceType) Implementation() visitableType {
+	return t
+}
 
 // String is codegen-safe.
 func (t namedSliceType) String() string {
@@ -124,6 +145,11 @@ type namedStruct struct {
 	// visitable interface with by-reference or by-value receiver methods.
 	implMode refMode
 	v        *visitation
+}
+
+// Implementation returns the receiver.
+func (t namedStruct) Implementation() visitableType {
+	return t
 }
 
 // String is codegen-safe.

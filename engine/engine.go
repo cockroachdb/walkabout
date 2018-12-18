@@ -114,11 +114,21 @@ func New(m TypeMap) *Engine {
 	e := &Engine{typeMap: append(m[:0:0], m...)}
 	for idx, td := range e.typeMap {
 		if td.Elem != 0 {
-			e.typeMap[idx].elemData = e.typeData(td.Elem)
+			found := e.typeData(td.Elem)
+			if found.TypeId == 0 {
+				panic(fmt.Errorf("bad codegen: missing %d.Elem %d",
+					td.TypeId, td.Elem))
+			}
+			e.typeMap[idx].elemData = found
 		}
 
 		for fIdx, field := range td.Fields {
-			e.typeMap[idx].Fields[fIdx].targetData = e.typeData(field.Target)
+			found := e.typeData(field.Target)
+			if found.TypeId == 0 {
+				panic(fmt.Errorf("bad codegen: missing %d.%s.Target %d",
+					td.TypeId, field.Name, field.Target))
+			}
+			e.typeMap[idx].Fields[fIdx].targetData = found
 		}
 	}
 	return e

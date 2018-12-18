@@ -83,7 +83,8 @@ func (v *visitation) visitableType(typ types.Type) (visitableType, bool) {
 				v:        v,
 			}
 			v.Structs[t.Obj().Name()] = ret
-			v.TypeIds[typeId(ret)] = ret
+			// Bootstrap the TypeIds map with root types.
+			//v.TypeIds[typeId(ret)] = ret
 			return ret, true
 
 		case *types.Interface:
@@ -93,34 +94,27 @@ func (v *visitation) visitableType(typ types.Type) (visitableType, bool) {
 					Interface: u,
 					v:         v,
 				}
+				// Bootstrap the TypeIds map with root types.
 				v.TypeIds[typeId(ret)] = ret
 				return ret, true
 			}
 
-		//case *types.Slice:
-		//	if s, ok := v.visitableType(u); ok {
-		//		st, ok := s.(namedSliceType)
-		//		return st, ok
-		//	}
 		default:
 			// Any other named visitable type: type Foos []Foo
 			if under, ok := v.visitableType(u); ok {
-				return namedVisitableType{Named: t, Underlying: under}, true
+				ret := namedVisitableType{Named: t, Underlying: under}
+				return ret, true
 			}
 		}
 
 	case *types.Pointer:
 		if elem, ok := v.visitableType(t.Elem()); ok {
-			ret := pointerType{Elem: elem}
-			v.TypeIds[typeId(ret)] = ret
-			return ret, true
+			return pointerType{Elem: elem}, true
 		}
 
 	case *types.Slice:
 		if elem, ok := v.visitableType(t.Elem()); ok {
-			ret := namedSliceType{Elem: elem}
-			v.TypeIds[typeId(ret)] = ret
-			return ret, true
+			return namedSliceType{Elem: elem}, true
 		}
 	}
 	return nil, false
