@@ -156,8 +156,15 @@ func (g *generation) parseFiles(files []string) error {
 // helps in cases where code in the package that we're parsing depends
 // on code that may not yet be generated (e.g. make clean).
 func (g *generation) typeCheck() error {
+	// We prefer to use the already-compiled and cached information
+	// available from the go compiler. We switch to source-based mode
+	// when we're injecting generated sources as part of the test suite.
+	importerName := "gc"
+	if g.fullCheck {
+		importerName = "source"
+	}
 	cfg := &types.Config{
-		Importer: importer.For("source", nil),
+		Importer: importer.For(importerName, nil),
 	}
 	if !g.fullCheck {
 		cfg.DisableUnusedImportCheck = true
