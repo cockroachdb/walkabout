@@ -16,10 +16,27 @@
 package demo_test
 
 import (
+	"runtime"
 	"testing"
+	"time"
 
 	"github.com/cockroachdb/walkabout/demo"
+	"github.com/stretchr/testify/assert"
 )
+
+// This is a quick check to keep the core loop allocation-free.
+func TestNoMallocs(t *testing.T) {
+	t.Run("useValuePtrs=true", func(t *testing.T) {
+		a := assert.New(t)
+		x, _ := demo.NewContainer(true)
+		testNoMallocs(a, x)
+	})
+	t.Run("useValuePtrs=false", func(t *testing.T) {
+		a := assert.New(t)
+		x, _ := demo.NewContainer(false)
+		testNoMallocs(a, x)
+	})
+}
 
 // BenchmarkNoop should demonstrate that visitations are allocation-free.
 func BenchmarkNoop(b *testing.B) {
@@ -45,4 +62,33 @@ func bench(b *testing.B, x *demo.ContainerType) {
 			}
 		}
 	})
+}
+
+// This runs in a loop until we have demonstrated that no mallocs
+// occur, or a timeout occurs. This allows us to account for any
+// other threads that may be running.
+func testNoMallocs(a *assert.Assertions, x *demo.ContainerType) {
+	stats := runtime.MemStats{}
+	timer := time.NewTimer(1 * time.Second)
+	fn := func(ctx demo.TargetContext, x demo.Target) (ret demo.TargetDecision) { return }
+
+	for {
+		select {
+		case <-timer.C:
+			a.Fail("timeout")
+			return
+		default:
+			runtime.ReadMemStats(&stats)
+			memBefore := stats.Mallocs
+
+			_, _, err := x.WalkTarget(fn)
+			runtime.ReadMemStats(&stats)
+
+			a.NoError(err)
+			memAfter := stats.Mallocs
+			if memAfter == memBefore {
+				return
+			}
+		}
+	}
 }
