@@ -3,11 +3,13 @@
 Walkabout is a code-generation tool to enhance struct types.
 
 Walkabout generates two complementary APIs:
-* A traversal API in which a visitor function is applied to a value and
+* A [traversal API](https://godoc.org/github.com/cockroachdb/walkabout/demo#example-package--Walk)
+  in which a visitor function is applied to a value and
   all of its children. The visitor function can mutate values in-place,
   or apply a copy-on-mutate behavior to edit "immutable" object graphs.
-* An "abstract accessor" API, which allows a visitable type to be
-  treated as though it were simply a tree of homogeneous nodes.
+* An ["abstract accessor"](https://godoc.org/github.com/cockroachdb/walkabout/demo#example-package--Abstract)
+  API, which allows a visitable type to be treated as though it were
+  simply a tree of homogeneous nodes.
 
 ## Features
 
