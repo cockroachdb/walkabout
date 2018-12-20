@@ -25,47 +25,65 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/pkg/errors"
 )
 
-// generation represents a run of the code generator. The overall
-// flow is broken up into various stages, which can be seen in
+type config struct {
+	dir string
+	// By default, we don't fully type-check the input. This can be
+	// enabled for testing to validate generated code.
+	fullCheck bool
+	// If present, overrides the output file name.
+	outFile string
+	// Include all types reachable from visitable types that implement
+	// the root visitable interface.
+	reachable bool
+	// The requested type names.
+	typeNames []string
+	// If present, unifies all specified interfaces under a single
+	// visitable interface with this name.
+	union string
+}
+
+// generation represents an entire run of the code generator. The
+// overall flow is broken up into various stages, which can be seen in
 // Execute().
 type generation struct {
+	config
+
 	astFiles []*ast.File
 	// Allows additional files to be added to the parse phase for testing.
 	extraTestSource map[string][]byte
 	fileSet         *token.FileSet
-	// By default, we don't fully type-check the input. This can be
-	// enabled for testing to validate generated code.
-	fullCheck bool
-	inputDir  string
-	pkg       *types.Package
+	pkg             *types.Package
 	// The sources being considered.
 	source *build.Package
-	// The keys are the requested type names.
-	visitations map[string]*visitation
+	// Stores the executed visitation for testing.
+	visitation  *visitation
 	writeCloser func(name string) (io.WriteCloser, error)
 }
 
 // newGeneration constructs a generation which will look for the
 // named interface types in the given directory.
-func newGeneration(dir string, typeNames []string) *generation {
-	ret := &generation{
-		fileSet:     token.NewFileSet(),
-		inputDir:    dir,
-		visitations: make(map[string]*visitation),
+func newGeneration(cfg config) (*generation, error) {
+	if len(cfg.typeNames) > 1 && cfg.union == "" {
+		return nil, errors.New("multiple input types can only be used with --union")
+	}
+	if cfg.reachable && cfg.union == "" {
+		return nil, errors.New("--reachable can only be used with --union")
+	}
+	return &generation{
+		fileSet: token.NewFileSet(),
+		config:  cfg,
 		writeCloser: func(name string) (io.WriteCloser, error) {
-			path := filepath.Join(dir, name)
-			return os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+			if name == "-" {
+				return os.Stdout, nil
+			} else {
+				return os.OpenFile(name, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+			}
 		},
-	}
-	for _, name := range typeNames {
-		ret.visitations[name] = nil
-	}
-	return ret
+	}, nil
 }
 
 // Execute runs the complete code-generation cycle.
@@ -99,17 +117,65 @@ func (g *generation) Execute() error {
 	if err := g.typeCheck(); err != nil {
 		return err
 	}
-	if err := g.findInputInterfaces(); err != nil {
-		return err
-	}
 
-	for _, v := range g.visitations {
-		v.populateGeneratedTypes()
-		if err := v.generateAPI(); err != nil {
-			return errors.Wrap(err, v.Intf.String())
+	v := &visitation{
+		gen:              g,
+		includeReachable: g.config.reachable,
+		pkg:              g.pkg,
+		Types:            make(map[TypeId]visitableType),
+		SourceTypes:      make(map[SourceName]visitableType),
+	}
+	g.visitation = v
+
+	if g.config.union != "" {
+		v.Root = namedInterfaceType{
+			Union: g.union,
+			v:     v,
 		}
 	}
-	return nil
+
+	// Resolve all of the specified type names to an interface or struct.
+	for _, name := range g.typeNames {
+		obj := v.pkg.Scope().Lookup(name)
+		if obj == nil {
+			return errors.Errorf("unknown type %q", name)
+		}
+		if named, ok := obj.Type().(*types.Named); ok {
+			var filter visitableType
+			switch u := named.Underlying().(type) {
+			case *types.Interface:
+				// The default case, we expect to see an interface type.
+				intf := namedInterfaceType{
+					Named:     named,
+					Interface: u,
+					v:         v,
+				}
+				if g.union == "" && len(g.typeNames) == 1 {
+					v.Root = intf
+				}
+				filter = intf
+			case *types.Struct:
+				// If we're generating the visitable interface with --union,
+				// we'll allow structs to be specified, too.
+				if g.union == "" {
+					return errors.Errorf("structs may only be used with --union")
+				}
+				filter = namedStruct{
+					Named:  named,
+					Struct: u,
+					v:      v,
+				}
+			default:
+				return errors.Errorf("%q is neither a struct nor an interface", name)
+			}
+
+			v.filters = append(v.filters, filter)
+		}
+	}
+
+	v.populateGeneratedTypes()
+
+	return v.generateAPI()
 }
 
 func (g *generation) addSource(source map[string][]byte) error {
@@ -131,7 +197,7 @@ func (g *generation) importSources() error {
 	// Don't re-import code that we've generated.
 	ctx.BuildTags = append(ctx.BuildTags, "walkaboutAnalysis")
 
-	pkg, err := ctx.ImportDir(g.inputDir, 0)
+	pkg, err := ctx.ImportDir(g.dir, 0)
 	if err != nil {
 		return err
 	}
@@ -142,7 +208,7 @@ func (g *generation) importSources() error {
 // parseFiles runs the golang parser to produce AST elements.
 func (g *generation) parseFiles(files []string) error {
 	for _, path := range files {
-		astFile, err := parser.ParseFile(g.fileSet, filepath.Join(g.inputDir, path), nil, 0 /* Mode */)
+		astFile, err := parser.ParseFile(g.fileSet, filepath.Join(g.dir, path), nil, 0 /* Mode */)
 		if err != nil {
 			return err
 		}
@@ -173,37 +239,9 @@ func (g *generation) typeCheck() error {
 		cfg.IgnoreFuncBodies = true
 	}
 	var err error
-	g.pkg, err = cfg.Check(g.inputDir, g.fileSet, g.astFiles, nil /* info */)
+	g.pkg, err = cfg.Check(g.dir, g.fileSet, g.astFiles, nil /* info */)
 	if err != nil && g.fullCheck {
 		return err
-	}
-	return nil
-}
-
-// findInputInterfaces looks for the interfaces named by the user.
-func (g *generation) findInputInterfaces() error {
-	scope := g.pkg.Scope()
-
-	for name := range g.visitations {
-		// Look for named interfaces. Remember that in go, a type name
-		// is separate from the named type.
-		if named, ok := scope.Lookup(name).(*types.TypeName); ok {
-			if intf, ok := named.Type().Underlying().(*types.Interface); ok {
-				v := &visitation{
-					gen: g,
-					Intf: namedInterfaceType{
-						Named:     named.Type().(*types.Named),
-						Interface: intf,
-					},
-					inTest:  strings.HasSuffix(g.fileSet.Position(named.Pos()).Filename, "_test.go"),
-					pkg:     named.Pkg(),
-					Structs: make(map[string]namedStruct),
-					TypeIds: make(map[string]visitableType),
-				}
-				v.Intf.v = v
-				g.visitations[named.Name()] = v
-			}
-		}
 	}
 	return nil
 }

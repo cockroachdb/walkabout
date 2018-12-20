@@ -13,17 +13,23 @@
 // permissions and limitations under the License. See the AUTHORS file
 // for names of contributors.
 
-package main
+// Package other is used to check reachable types declared in
+// other packages.
+package other
 
-import (
-	"os"
+// This type is reachable from our Container type, but we can't
+// do anything to make it implement a common interface (unless
+// we want the generator to start writing into multiple output
+// directories in a single pass, which seems fraught).
+type Reachable struct{}
 
-	"github.com/cockroachdb/walkabout/gen"
-)
+// This type is in another package, but since it implements the
+// visitable interface, it's eligible for [reachable && !union] mode.
+type Implemetor struct {
+	val string
+}
 
-func main() {
-	if err := gen.Main(); err != nil {
-		os.Exit(1)
-	}
-	os.Exit(0)
+// Value implements the Target interface.
+func (i Implemetor) Value() string {
+	return i.val
 }

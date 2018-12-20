@@ -16,6 +16,8 @@
 // Package demo is used for demonstration and testing of walkabout.
 package demo
 
+import "github.com/cockroachdb/walkabout/demo/other"
+
 //go:generate walkabout Target
 
 // Target is a base interface that we run the code-generator against.
@@ -64,6 +66,30 @@ func (ByValType) embedsTarget() {}
 // Value implements the Target interface.
 func (x ByValType) Value() string { return x.Val }
 
+// ignoredType is not exported, so it won't appear in the API.
+type ignoredType struct{}
+
+// Value implements the Target interface.
+func (ignoredType) Value() string { return "Should never see this" }
+
+// This type will be included in --union --reachable mode. It doesn't
+// implement the Target interface, but it is a field in ContainerType.
+type ReachableType struct{}
+
+// This type isn't reachable from any type that implements Target,
+// so it will never be generated.
+type NeverType struct{}
+
+// Unionable demonstrates how multiple type hierarchies can be
+// unioned using another generated interface.
+type Unionable interface {
+	isUnionable()
+}
+
+type UnionableType struct{}
+
+func (UnionableType) isUnionable() {}
+
 // ContainerType is just a regular struct that contains fields
 // whose types implement or contain Target.
 type ContainerType struct {
@@ -100,16 +126,26 @@ type ContainerType struct {
 	ignored ByRefType
 	// Unexported types aren't generated.
 	Ignored *ignoredType
+
+	// This field will be generated one when in --union mode.
+	UnionableType *UnionableType
+
+	/// This field will only be visited when in --union --reachable mode.
+	ReachableType ReachableType
+
+	// This type is declared in another package. It shouldn't be present
+	// in any configuration, unless we allow the code generator to
+	// start writing to multiple directories, in which case we can make
+	// --union --reachable work.
+	OtherReachable other.Reachable
+
+	// This field is in --reachable mode, since it does implement
+	// our Target interface.
+	OtherImplementor other.Implemetor
 }
 
 // Value implements the Target interface.
 func (*ContainerType) Value() string { return "Container" }
-
-// ignoredType is not exported, so it won't appear in the API.
-type ignoredType struct{}
-
-// Value implements the Target interface.
-func (ignoredType) Value() string { return "Should never see this" }
 
 // NewContainer generates test data.
 func NewContainer(useValuePtrs bool) (*ContainerType, int) {

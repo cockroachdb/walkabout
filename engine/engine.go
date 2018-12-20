@@ -43,8 +43,10 @@ type frame struct {
 }
 
 // Active retrieves the active slot.
-func (f *frame) Active() *slot {
-	return f.Slot(f.Idx)
+func (f *frame) Active() (s *slot, td *TypeData) {
+	s = f.Slot(f.Idx)
+	td = s.TypeData
+	return
 }
 
 // Slot is used to access a storage slot within the frame.
@@ -192,8 +194,8 @@ enter:
 	// disallows recursive type definitions, so it's impossible for the
 	// first field of a struct to be exactly the struct type.
 	for l := 0; l < stackIdx; l++ {
-		onStack := stack[l].Active()
-		if onStack.Value == curSlot.Value && onStack.TypeData.TypeId == curType.TypeId {
+		onStack, onStackType := stack[l].Active()
+		if onStack.Value == curSlot.Value && onStackType.TypeId == curType.TypeId {
 			goto nextSlot
 		}
 	}
@@ -312,8 +314,7 @@ unwind:
 	// the changes upwards in the stack.
 	if curSlot.Dirty {
 		if stackIdx > 0 {
-			parentLevel := &stack[stackIdx-1]
-			parentFrame := parentLevel.Active()
+			parentFrame, _ := stack[stackIdx-1].Active()
 			parentFrame.Dirty = true
 		}
 
@@ -377,16 +378,14 @@ nextSlot:
 		// Pop a frame off of the stack and update local vars.
 		stackIdx--
 		curFrame = &stack[stackIdx]
-		curSlot = curFrame.Active()
-		curType = curSlot.TypeData
+		curSlot, curType = curFrame.Active()
 		// We'll jump back to the unwinding code to finish the slot of the
 		// frame which is now on top.
 		goto unwind
 	} else {
 		// We're just advancing to the next slot, so we jump back to the
 		// top.
-		curSlot = curFrame.Active()
-		curType = curSlot.TypeData
+		curSlot, curType = curFrame.Active()
 		goto enter
 	}
 }

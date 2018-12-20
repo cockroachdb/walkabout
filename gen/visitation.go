@@ -15,22 +15,40 @@
 
 package gen
 
-import "go/types"
+import (
+	"fmt"
+	"go/types"
+)
+
+// TypeId is a constant string to be emitted in the generated code.
+type TypeId string
+
+func (s TypeId) String() string { return string(s) }
+
+// SourceName is the name of a type as it appears in the input source.
+type SourceName string
+
+func (s SourceName) String() string { return string(s) }
 
 // visitation encapsulates the state of generating a single
 // visitable interface. This type is used extensively by the
 // API template and exposes many convenience functions to keep
 // the template simple.
 type visitation struct {
-	gen *generation
-	// The visitable interface.
-	Intf    namedInterfaceType
-	inTest  bool
-	pkg     *types.Package
-	Structs map[string]namedStruct
-	// TypeIds collects all referenced types, indexed by their
-	// generated TypeId name.
-	TypeIds map[string]visitableType
+	// The interfaces that are used to select structs to be included
+	// in the visitation.
+	filters []visitableType
+	gen     *generation
+	// If true, any struct that is in the same package will be eligible
+	// for inclusion.
+	includeReachable bool
+	inTest           bool
+	pkg              *types.Package
+	// The root visitable interface.
+	Root namedInterfaceType
+	// types collects all referenced types, indexed by their type id.
+	Types       map[TypeId]visitableType
+	SourceTypes map[SourceName]visitableType
 }
 
 // populateGeneratedTypes finds top-level types that we will generate
@@ -46,74 +64,135 @@ func (v *visitation) populateGeneratedTypes() {
 		if named, ok := obj.Type().(*types.Named); ok {
 			switch named.Underlying().(type) {
 			case *types.Struct, *types.Interface:
-				v.visitableType(obj.Type())
+				v.visitableType(obj.Type(), false)
 			}
+		}
+	}
+}
+
+// ensureTypeId ensures that the types map contains an entry
+// for the given type.
+func (v *visitation) ensureTypeId(i visitableType) TypeId {
+	ret := v.typeId(i)
+	if _, found := v.Types[ret]; !found {
+		v.Types[ret] = i
+	}
+	return ret
+}
+
+// typeId generates a reasonable description of a type. Generated tokens
+// are attached to the underlying visitation so that we can be sure
+// to actually generate them in a subsequent pass.
+//   *Foo -> FooPtr
+//   []Foo -> FooSlice
+//   []*Foo -> FooPtrSlice
+//   *[]Foo -> FooSlicePtr
+func (v *visitation) typeId(i visitableType) TypeId {
+	suffix := ""
+	for {
+		switch t := i.(type) {
+		case pointerType:
+			suffix = "Ptr" + suffix
+			i = t.Elem
+		case namedSliceType:
+			suffix = "Slice" + suffix
+			i = t.Elem
+		case namedVisitableType:
+			i = t.Underlying
+		default:
+			return TypeId(fmt.Sprintf("%sType%s%s", v.Root, t, suffix))
 		}
 	}
 }
 
 // visitableType extracts the type information that we care about
 // from typ. This handles named and anonymous types that are visitable.
-func (v *visitation) visitableType(typ types.Type) (visitableType, bool) {
+func (v *visitation) visitableType(typ types.Type, isReachable bool) (visitableType, bool) {
 	switch t := typ.(type) {
 	case *types.Named:
 		// Ignore un-exported types.
 		if !t.Obj().Exported() {
 			return nil, false
 		}
+		sourceName := SourceName(t.Obj().Name())
+		if ret, ok := v.SourceTypes[sourceName]; ok {
+			return ret, true
+		}
+
 		switch u := t.Underlying().(type) {
 		case *types.Struct:
-			if s, ok := v.Structs[t.Obj().Name()]; ok {
-				return s, true
+			ok := v.includeReachable && isReachable && t.Obj().Pkg() == v.pkg
+
+			if !ok {
+			outer:
+				for _, filter := range v.filters {
+					switch tFilter := filter.(type) {
+					case namedStruct:
+						if types.Identical(u, tFilter.Struct) {
+							ok = true
+							break outer
+						}
+					case namedInterfaceType:
+						if types.Implements(t, tFilter.Interface) ||
+							types.Implements(types.NewPointer(t), tFilter.Interface) {
+							ok = true
+							break outer
+						}
+					}
+				}
 			}
 
-			var mode refMode
-			if types.Implements(t, v.Intf.Interface) {
-				mode = byValue
-			} else if types.Implements(types.NewPointer(t), v.Intf.Interface) {
-				mode = byRef
-			} else {
-				return nil, false
+			if ok {
+				ret := namedStruct{
+					Named:  t,
+					Struct: u,
+					v:      v,
+				}
+				v.SourceTypes[sourceName] = ret
+				v.ensureTypeId(ret)
+				ret.Fields()
+				return ret, true
 			}
-
-			ret := namedStruct{
-				Named:    t,
-				Struct:   u,
-				implMode: mode,
-				v:        v,
-			}
-			v.Structs[t.Obj().Name()] = ret
-			// Bootstrap the TypeIds map with root types.
-			//v.TypeIds[typeId(ret)] = ret
-			return ret, true
 
 		case *types.Interface:
-			if types.Implements(u, v.Intf.Interface) {
+			ok := v.includeReachable && isReachable && t.Obj().Pkg() == v.pkg
+			if !ok {
+				for _, filter := range v.filters {
+					if filterIntf, isIntf := filter.(namedInterfaceType); isIntf {
+						if types.Implements(u, filterIntf.Interface) {
+							ok = true
+							break
+						}
+					}
+				}
+			}
+			if ok {
 				ret := namedInterfaceType{
 					Named:     t,
 					Interface: u,
 					v:         v,
 				}
-				// Bootstrap the TypeIds map with root types.
-				v.TypeIds[typeId(ret)] = ret
+				v.SourceTypes[sourceName] = ret
+				v.ensureTypeId(ret)
 				return ret, true
 			}
 
 		default:
 			// Any other named visitable type: type Foos []Foo
-			if under, ok := v.visitableType(u); ok {
+			if under, ok := v.visitableType(u, isReachable); ok {
 				ret := namedVisitableType{Named: t, Underlying: under}
+				v.SourceTypes[sourceName] = ret
 				return ret, true
 			}
 		}
 
 	case *types.Pointer:
-		if elem, ok := v.visitableType(t.Elem()); ok {
+		if elem, ok := v.visitableType(t.Elem(), isReachable); ok {
 			return pointerType{Elem: elem}, true
 		}
 
 	case *types.Slice:
-		if elem, ok := v.visitableType(t.Elem()); ok {
+		if elem, ok := v.visitableType(t.Elem(), isReachable); ok {
 			return namedSliceType{Elem: elem}, true
 		}
 	}
@@ -122,5 +201,5 @@ func (v *visitation) visitableType(typ types.Type) (visitableType, bool) {
 
 // String is for debugging use only.
 func (v *visitation) String() string {
-	return v.Intf.String()
+	return v.Root.String()
 }

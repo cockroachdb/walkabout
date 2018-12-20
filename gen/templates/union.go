@@ -13,17 +13,27 @@
 // permissions and limitations under the License. See the AUTHORS file
 // for names of contributors.
 
-package main
+package templates
 
-import (
-	"os"
+func init() {
+	TemplateSources["50union"] = `
+{{- $v := . -}}
+{{- $Union := $v.Root.Union -}}
+{{- if $Union -}}
+type {{ $Union }} interface {
+	{{ $Union }}Abstract
+	is{{ $Union }}Type()
+}
 
-	"github.com/cockroachdb/walkabout/gen"
+var (
+{{- range $s := Structs $v }}
+	_ {{ $Union }} = &{{ $s }}{}
+{{- end -}}
 )
 
-func main() {
-	if err := gen.Main(); err != nil {
-		os.Exit(1)
-	}
-	os.Exit(0)
+{{- range $s := Structs $v }}
+func (*{{ $s }}) is{{ $Union }}Type() {}
+{{- end -}}
+{{- end -}}
+`
 }

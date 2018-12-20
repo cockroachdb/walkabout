@@ -21,14 +21,14 @@ func init() {
 {{- $Abstract := T $v "Abstract" -}}
 {{- $Context := T $v "Context" -}}
 {{- $Decision := T $v "Decision" -}}
-{{- $Intf := $v.Intf -}}
+{{- $Root := $v.Root -}}
 {{- $TypeId := T $v "TypeId " -}}
 {{- $WalkerFn := T $v "WalkerFn" -}}
 
 // {{ $TypeId }} is a lightweight type token.
 type {{ $TypeId }} e.TypeId
 
-// {{ $Abstract }} allows users to treat a {{ $Intf }} as an abstract
+// {{ $Abstract }} allows users to treat a {{ $Root }} as an abstract
 // tree of nodes. All visitable struct types will have generated methods
 // which implement this interface. 
 type {{ $Abstract }} interface {
@@ -47,13 +47,13 @@ type {{ $Abstract }} interface {
 }
 
 var (
-{{- range $s := $v.Structs -}}
+{{- range $s := Structs $v -}}
 _ {{ $Abstract }} = &{{ $s }}{};
 {{- end -}}
 )
 
 // {{ $WalkerFn }} is used to implement a visitor pattern over
-// types which implement {{ $Intf }}.
+// types which implement {{ $Root }}.
 //
 // Implementations of this function return a {{ $Decision }}, which
 // allows the function to control traversal. The zero value of
@@ -62,7 +62,7 @@ _ {{ $Abstract }} = &{{ $s }}{};
 //
 // A {{ $Decision }} can also specify a post-visit function to execute
 // or can be used to replace the value being visited.
-type {{ $WalkerFn }} func(ctx {{ $Context }}, x {{ $Intf }}) {{ $Decision }}
+type {{ $WalkerFn }} func(ctx {{ $Context }}, x {{ $Root }}) {{ $Decision }}
 
 // {{ $Context }} is provided to {{ $WalkerFn }} and acts as a factory
 // for constructing {{ $Decision }} instances.
@@ -101,9 +101,9 @@ type {{ $Decision }} struct {
 
 // Replace allows the currently-visited value to be replaced. All
 // parent nodes will be cloned.
-func (d {{ $Decision }}) Replace(x {{ $Intf }}) {{ $Decision }} {
+func (d {{ $Decision }}) Replace(x {{ $Root }}) {{ $Decision }} {
 	switch t := x.(type) {
-		{{ range $imp := Implementors $Intf -}}
+		{{ range $imp := Implementors $Root -}}
 		case {{ $imp.Actual }}:
 			d.impl.ReplacementType = e.TypeId({{ TypeId $imp.Underlying }});
 			{{ if IsPointer $imp.Actual }}d.impl.Replacement = e.Ptr(t);

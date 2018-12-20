@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"go/format"
 	"go/types"
+	"path/filepath"
 	"sort"
 	"strings"
 	"text/template"
@@ -44,50 +45,23 @@ type implementor struct {
 	Underlying namedStruct
 }
 
-// TypeId generates a reasonable description of a type. Generated tokens
-// are attached to the underlying visitation so that we can be sure
-// to actually generate them in a subsequent pass.
-//   *Foo -> FooPtr
-//   []Foo -> FooSlice
-//   []*Foo -> FooPtrSlice
-//   *[]Foo -> FooSlicePtr
-func typeId(i visitableType) string {
-	org := i
-	suffix := ""
-	for {
-		switch t := i.(type) {
-		case pointerType:
-			suffix = "Ptr" + suffix
-			i = t.Elem
-		case namedSliceType:
-			suffix = "Slice" + suffix
-			i = t.Elem
-		case namedVisitableType:
-			i = t.Underlying
-		default:
-			ret := fmt.Sprintf("%sType%s%s", t.Visitation().Intf, t, suffix)
-			org.Visitation().TypeIds[ret] = org
-			return ret
-		}
-	}
-}
-
 // funcMap contains a map of functions that can be called from within
 // the templates.
 var funcMap = template.FuncMap{
-	// Implementors returns a sortable map of implementors. The first
-	// element in the pair is a type which implements the interface. The
-	// second element is the underlying struct type (which might be the
-	// same as the first element).
+	// Implementors returns a sortable map of types which implement
+	// the interface.
 	"Implementors": func(t namedInterfaceType) map[string]implementor {
 		ret := make(map[string]implementor)
-		for _, s := range t.Visitation().Structs {
-			if types.Implements(s.Named, t.Interface) {
-				ret[s.String()] = implementor{t, s, s}
-			}
-			if types.Implements(types.NewPointer(s.Named), t.Interface) {
-				p := pointerType{s}
-				ret[s.String()+"*"] = implementor{t, p, s}
+		isUnion := t.Union != "" && t.Union == t.Visitation().Root.Union
+		for _, typ := range t.Visitation().Types {
+			if s, ok := typ.(namedStruct); ok {
+				if !isUnion && types.Implements(s.Named, t.Interface) {
+					ret[s.String()] = implementor{t, s, s}
+				}
+				if isUnion || types.Implements(types.NewPointer(s.Named), t.Interface) {
+					p := pointerType{s}
+					ret[s.String()+"*"] = implementor{t, p, s}
+				}
 			}
 		}
 		return ret
@@ -95,9 +69,9 @@ var funcMap = template.FuncMap{
 	// Intfs returns a sortable map of all interface types used.
 	"Intfs": func(v *visitation) map[string]namedInterfaceType {
 		ret := make(map[string]namedInterfaceType)
-		for _, t := range v.TypeIds {
+		for _, t := range v.Types {
 			if s, ok := t.Implementation().(namedInterfaceType); ok {
-				ret[t.String()] = s
+				ret[s.String()] = s
 			}
 		}
 		return ret
@@ -116,43 +90,58 @@ var funcMap = template.FuncMap{
 			}
 		}
 	},
-	// Slices returns a sortable map of all slice types used.
-	"Slices": func(v *visitation) map[string]namedSliceType {
-		ret := make(map[string]namedSliceType)
-		for _, t := range v.TypeIds {
-			if s, ok := t.Implementation().(namedSliceType); ok {
-				ret[t.String()] = s
-			}
-		}
-		return ret
-	},
 	// Package returns the name of the package we're working in.
 	"Package": func(v *visitation) string { return v.pkg.Name() },
 	// Pointers returns a sortable map of all pointer types used.
 	"Pointers": func(v *visitation) map[string]pointerType {
 		ret := make(map[string]pointerType)
-		for _, t := range v.TypeIds {
+		for _, t := range v.Types {
 			if ptr, ok := t.Implementation().(pointerType); ok {
-				ret[t.String()] = ptr
+				ret[ptr.String()] = ptr
+			}
+		}
+		return ret
+	},
+	// Slices returns a sortable map of all slice types used.
+	"Slices": func(v *visitation) map[string]namedSliceType {
+		ret := make(map[string]namedSliceType)
+		for _, t := range v.Types {
+			if s, ok := t.Implementation().(namedSliceType); ok {
+				ret[s.String()] = s
 			}
 		}
 		return ret
 	},
 	// SourceFile returns the name of the file that defines the interface.
 	"SourceFile": func(v *visitation) string {
-		return v.gen.fileSet.Position(v.pkg.Scope().Lookup(v.Intf.String()).Pos()).Filename
+		if v.Root.Named == nil {
+			return ""
+		}
+		return v.gen.fileSet.Position(v.Root.Obj().Pos()).Filename
+	},
+	// Structs returns a sortable map of all slice types used.
+	"Structs": func(v *visitation) map[string]namedStruct {
+		ret := make(map[string]namedStruct)
+		for _, t := range v.Types {
+			if s, ok := t.Implementation().(namedStruct); ok {
+				ret[t.String()] = s
+			}
+		}
+		return ret
 	},
 	// t returns an un-exported named based on the visitable interface name.
 	"t": func(v *visitation, name string) string {
-		intfName := v.Intf.String()
+		intfName := v.Root.String()
 		return fmt.Sprintf("%s%s%s", strings.ToLower(intfName[:1]), intfName[1:], name)
 	},
 	// T returns an exported named based on the visitable interface name.
 	"T": func(v *visitation, name string) string {
-		return fmt.Sprintf("%s%s", v.Intf, name)
+		return fmt.Sprintf("%s%s", v.Root, name)
 	},
 	// TypeId generates a reasonable description of a type.
-	"TypeId": typeId,
+	"TypeId": func(t visitableType) TypeId {
+		return t.Visitation().ensureTypeId(t)
+	},
 }
 
 // generateAPI is the main code-generation function. It evaluates
@@ -182,11 +171,16 @@ func (v *visitation) generateAPI() error {
 		return err
 	}
 
-	outName := strings.ToLower(v.Intf.String()) + "_walkabout.g"
-	if v.inTest {
-		outName += "_test"
+	outName := v.gen.outFile
+	if outName == "" {
+		outName = strings.ToLower(v.Root.String()) + "_walkabout.g"
+		if v.inTest {
+			outName += "_test"
+		}
+		outName += ".go"
+		outName = filepath.Join(v.gen.dir, outName)
 	}
-	outName += ".go"
+
 	out, err := v.gen.writeCloser(outName)
 	if err != nil {
 		return err

@@ -24,6 +24,32 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+var configs = map[string]config{
+	"single": {
+		dir:       "../demo",
+		typeNames: []string{"Target"},
+	},
+	"union": {
+		dir:       "../demo",
+		typeNames: []string{"Target", "Unionable"},
+		union:     "Union",
+	},
+	"unionReachable": {
+		dir:       "../demo",
+		typeNames: []string{"Target", "Unionable"},
+		union:     "Union",
+		reachable: true},
+	"structUnion": {
+		dir:       "../demo",
+		typeNames: []string{"ContainerType", "ByValType"},
+		union:     "Union"},
+	"structUnionReachable": {
+		dir:       "../demo",
+		typeNames: []string{"ContainerType"},
+		union:     "Union",
+		reachable: true},
+}
+
 // Verify that our example data in the demo package is correct and
 // that we won't break the existing test code with updated outputs.
 // This test has two passes.  The first generates the code we want
@@ -31,88 +57,172 @@ import (
 // demo package to make sure that any changes to the generated
 // code will compile.
 func TestExampleData(t *testing.T) {
-	a := assert.New(t)
-	outputs := make(map[string][]byte)
-	g := newGenerationForTesting("../demo", []string{"Target"}, outputs)
+	for name, cfg := range configs {
+		t.Run(name, func(t *testing.T) {
+			a := assert.New(t)
+			outputs := make(map[string][]byte)
 
-	if !a.NoError(g.Execute()) {
-		for k, v := range outputs {
-			t.Logf("%s\n%s\n\n\n", k, string(v))
-		}
-	}
+			newGeneration := func() (*generation, string, error) {
+				g, err := newGenerationForTesting(cfg, outputs)
+				if err != nil {
+					return nil, "", err
+				}
+				if cfg.union == "" {
+					return g, cfg.typeNames[0], nil
+				}
+				return g, cfg.union, nil
+			}
 
-	a.Len(g.visitations, 1)
-	v, ok := g.visitations["Target"]
-	a.True(ok, "did not find Target interface")
-	a.Equal("Target", v.Intf.String(), "wrong intfname")
+			g, prefix, err := newGeneration()
+			if !a.NoError(err) {
+				return
+			}
 
-	a.Len(v.Structs, 3)
-	v.checkStructInfo(a, "ContainerType", byRef, 16)
-	v.checkStructInfo(a, "ByValType", byValue, 0)
-	v.checkStructInfo(a, "ByRefType", byRef, 0)
+			if !a.NoError(g.Execute()) {
+				for k, v := range outputs {
+					t.Logf("%s\n%s\n\n\n", k, string(v))
+				}
+				return
+			}
 
-	v.checkVisitableInterface(a, "Target")
-	v.checkVisitableInterface(a, "EmbedsTarget")
+			expectTarget := true
+			v := g.visitation
+			a.Equal(prefix, v.Root.String(), "wrong intfname")
 
-	g = newGenerationForTesting("../demo", []string{"Target"}, outputs)
-	g.fullCheck = true
-	g.extraTestSource = outputs
-	if !a.NoError(g.Execute(), "could not parse with generated code") {
-		for k, v := range outputs {
-			t.Logf("%s\n%s\n\n\n", k, string(v))
-		}
+			switch name {
+			case "single":
+				a.Len(v.Types, 16)
+				v.checkStructInfo(a, "ContainerType", "ByRef", "ByRefPtr", "ByRefSlice", "ByRefPtrSlice",
+					"ByVal", "ByValPtr", "ByValSlice", "ByValPtrSlice", "Container", "AnotherTarget",
+					"AnotherTargetPtr", "EmbedsTarget", "EmbedsTargetPtr", "TargetSlice",
+					"InterfacePtrSlice", "NamedTargets")
+
+			case "unionReachable":
+				a.Len(v.Types, 22)
+				v.checkStructInfo(a, "ContainerType", "ByRef", "ByRefPtr", "ByRefSlice", "ByRefPtrSlice",
+					"ByVal", "ByValPtr", "ByValSlice", "ByValPtrSlice", "Container", "AnotherTarget",
+					"AnotherTargetPtr", "EmbedsTarget", "EmbedsTargetPtr", "TargetSlice",
+					"InterfacePtrSlice", "NamedTargets", "UnionableType", "ReachableType")
+				v.checkStructInfo(a, "ReachableType")
+				a.Equal(cfg.union, v.Root.Union)
+
+			case "union":
+				a.Len(v.Types, 20)
+				v.checkStructInfo(a, "ContainerType", "ByRef", "ByRefPtr", "ByRefSlice", "ByRefPtrSlice",
+					"ByVal", "ByValPtr", "ByValSlice", "ByValPtrSlice", "Container", "AnotherTarget",
+					"AnotherTargetPtr", "EmbedsTarget", "EmbedsTargetPtr", "TargetSlice", "InterfacePtrSlice",
+					"NamedTargets", "UnionableType")
+				v.checkStructInfo(a, "UnionableType")
+				a.Equal(cfg.union, v.Root.Union)
+
+			case "structUnion":
+				a.Len(v.Types, 11)
+				v.checkStructInfo(a, "ContainerType", "ByRef", "ByRefPtr", "ByRefSlice", "ByRefPtrSlice",
+					"ByVal", "ByValPtr", "ByValSlice", "ByValPtrSlice", "Container")
+				a.Equal(cfg.union, v.Root.Union)
+				expectTarget = false
+
+			case "structUnionReachable":
+				a.Len(v.Types, 21)
+				v.checkStructInfo(a, "ContainerType", "ByRef", "ByRefPtr", "ByRefSlice", "ByRefPtrSlice",
+					"ByVal", "ByValPtr", "ByValSlice", "ByValPtrSlice", "Container", "AnotherTarget",
+					"AnotherTargetPtr", "EmbedsTarget", "EmbedsTargetPtr", "TargetSlice",
+					"InterfacePtrSlice", "NamedTargets", "UnionableType", "ReachableType")
+				v.checkStructInfo(a, "ReachableType")
+				a.Equal(cfg.union, v.Root.Union)
+				expectTarget = false
+
+			default:
+				a.Fail("unknown test configuration", name)
+			}
+			v.checkStructInfo(a, "ByValType")
+			v.checkStructInfo(a, "ByRefType")
+
+			if expectTarget {
+				v.checkVisitableInterface(a, "Target")
+				v.checkVisitableInterface(a, "EmbedsTarget")
+			}
+
+			g, _, err = newGeneration()
+			if !a.NoError(err) {
+				return
+			}
+			g.fullCheck = true
+			g.extraTestSource = outputs
+			if !a.NoError(g.Execute(), "could not parse with generated code") {
+				for k, v := range outputs {
+					t.Logf("%s\n%s\n\n\n", k, string(v))
+				}
+			}
+		})
 	}
 }
 
 // Run the generator twice to ensure that it produces stable output.
 func TestOutputIsStable(t *testing.T) {
-	a := assert.New(t)
+	for name, cfg := range configs {
+		t.Run(name, func(t *testing.T) {
+			a := assert.New(t)
 
-	outputs1 := make(map[string][]byte)
-	g1 := newGenerationForTesting("../demo", []string{"Target"}, outputs1)
-	a.NoError(g1.Execute())
-	a.True(len(outputs1) > 0, "no outputs")
+			outputs1 := make(map[string][]byte)
+			g1, err := newGenerationForTesting(cfg, outputs1)
+			if !a.NoError(err) {
+				return
+			}
+			a.NoError(g1.Execute())
+			a.True(len(outputs1) > 0, "no outputs")
 
-	outputs2 := make(map[string][]byte)
-	g2 := newGenerationForTesting("../demo", []string{"Target"}, outputs2)
-	a.NoError(g2.Execute())
-	a.True(len(outputs2) > 0, "no outputs")
+			outputs2 := make(map[string][]byte)
+			g2, err := newGenerationForTesting(cfg, outputs2)
+			if !a.NoError(err) {
+				return
+			}
+			a.NoError(g2.Execute())
+			a.True(len(outputs2) > 0, "no outputs")
 
-	a.Equal(outputs1, outputs2)
+			a.Equal(outputs1, outputs2)
+		})
+	}
 }
 
-func (v *visitation) checkVisitableInterface(a *assert.Assertions, name string) {
-	obj := v.pkg.Scope().Lookup(name)
-	if !a.NotNil(obj, "did not find", name) {
-		return
+func (v *visitation) checkVisitableInterface(a *assert.Assertions, name SourceName) {
+	found := v.SourceTypes[name]
+	if a.NotNilf(found, "%s", name) {
+		a.IsTypef(namedInterfaceType{}, found, "%s", name)
 	}
-	vt, ok := v.visitableType(obj.Type())
-	a.True(ok, name, "was not a visitableType")
-	a.IsType(namedInterfaceType{}, vt, name)
 }
 
-func (v *visitation) checkStructInfo(
-	a *assert.Assertions, name string, implMode refMode, fieldCount int,
-) {
-	s, ok := v.Structs[name]
-	if !a.True(ok, "did not find", name) {
+func (v *visitation) checkStructInfo(a *assert.Assertions, name SourceName, hasFields ...string) {
+	t, ok := v.SourceTypes[name]
+	if !a.Truef(ok, "did not find %s", name) || !a.IsTypef(namedStruct{}, t, "%s not a struct", name) {
 		return
 	}
-	a.Equal(implMode, s.implMode)
-	a.Len(s.Fields(), fieldCount)
+	s := t.(namedStruct)
+
+	fields := s.Fields()
+	if hasFields == nil {
+		a.Lenf(fields, 0, "%s", name)
+	} else {
+		fieldNames := make([]string, 0, len(s.Fields()))
+		for _, f := range s.Fields() {
+			fieldNames = append(fieldNames, f.Name)
+		}
+		a.Equalf(hasFields, fieldNames, "%s", name)
+	}
 }
 
 // newGenerationForTesting creates a generator that captures
 // its output in the provided map.
-func newGenerationForTesting(
-	dir string, typeNames []string, outputs map[string][]byte,
-) *generation {
-	g := newGeneration(dir, typeNames)
+func newGenerationForTesting(cfg config, outputs map[string][]byte) (*generation, error) {
+	g, err := newGeneration(cfg)
+	if err != nil {
+		return nil, err
+	}
 	var mu sync.Mutex
 	g.writeCloser = func(name string) (io.WriteCloser, error) {
 		return newMapWriter(name, &mu, outputs), nil
 	}
-	return g
+	return g, nil
 }
 
 // mapWriter is a trivial implementation of io.WriteCloser that captures

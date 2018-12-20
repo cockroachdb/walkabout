@@ -50,6 +50,7 @@ var (
 	_ visitableType = namedVisitableType{}
 	_ visitableType = pointerType{}
 	_ visitableType = namedSliceType{}
+	_ visitableType = unionInterface{}
 )
 
 // namedVisitableType represents a named type definition like:
@@ -79,7 +80,8 @@ func (t namedVisitableType) Visitation() *visitation {
 type namedInterfaceType struct {
 	*types.Named
 	*types.Interface
-	v *visitation
+	Union string
+	v     *visitation
 }
 
 // Implementation returns the receiver.
@@ -89,6 +91,9 @@ func (t namedInterfaceType) Implementation() visitableType {
 
 // String is codegen-safe.
 func (t namedInterfaceType) String() string {
+	if t.Union != "" {
+		return t.Union
+	}
 	return t.Obj().Name()
 }
 
@@ -141,10 +146,7 @@ func (t namedSliceType) Visitation() *visitation {
 type namedStruct struct {
 	*types.Named
 	*types.Struct
-	// implMode indicates whether or not the struct implements the
-	// visitable interface with by-reference or by-value receiver methods.
-	implMode refMode
-	v        *visitation
+	v *visitation
 }
 
 // Implementation returns the receiver.
@@ -169,7 +171,7 @@ func (i namedStruct) Fields() []fieldInfo {
 		}
 
 		// Look up `field Something` to visitableType.
-		if found, ok := i.v.visitableType(f.Type()); ok {
+		if found, ok := i.v.visitableType(f.Type(), true); ok {
 			ret = append(ret, fieldInfo{
 				Name:   f.Name(),
 				Parent: &i,
@@ -184,6 +186,27 @@ func (i namedStruct) Fields() []fieldInfo {
 // Visitation implements visitableType.
 func (i namedStruct) Visitation() *visitation {
 	return i.v
+}
+
+type unionInterface struct {
+	name  string
+	intfs []visitableType
+	v     *visitation
+}
+
+// Implementation returns the receiver.
+func (t unionInterface) Implementation() visitableType {
+	return t
+}
+
+// String is codegen-safe.
+func (t unionInterface) String() string {
+	return t.name
+}
+
+// Visitation implements visitableType.
+func (t unionInterface) Visitation() *visitation {
+	return t.v
 }
 
 // fieldInfo describes a field containing a visitable type.

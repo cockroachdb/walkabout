@@ -25,7 +25,7 @@ func init() {
 
 var {{ $Engine }} = e.New(e.TypeMap {
 // ------ Structs ------
-{{ range $s := $v.Structs }}{{ TypeId $s }}: {
+{{ range $s := Structs $v }}{{ TypeId $s }}: {
 	Copy: func(dest, from e.Ptr) { *(*{{ $s }})(dest) = *(*{{ $s }})(from) },
 	Facade: func(impl e.ContextImpl, fn e.FacadeFn, x e.Ptr) e.DecisionImpl {
 		return fn.({{ $WalkerFn }})({{ $Context }}{impl}, (*{{ $s }})(x)).impl
@@ -101,12 +101,12 @@ var {{ $Engine }} = e.New(e.TypeMap {
 // These are lightweight type tokens. 
 const (
 	_ {{ T $v "TypeId" }} = iota
-{{ range $k, $v := $v.TypeIds }}{{ $k }};{{ end }}
+{{ range $t := $v.Types }}{{ TypeId $t }};{{ end }}
 )
 
 var {{ t $v "TypeIdNames" }} = [...]string{
 	"<NIL>",
-	{{ range $t := $v.TypeIds }}"{{ $t }}",
+	{{ range $t := $v.Types }}"{{ $t }}",
 {{ end }} }
 
 // String is for debugging use only.

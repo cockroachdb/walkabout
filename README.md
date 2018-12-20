@@ -1,6 +1,42 @@
 # Walkabout
 
-Walkabout is a code-generation tool to enhance struct types.
+```
+$ walkabout --help
+walkabout is a code-generation tool to enhance struct types.
+https://github.com/cockroachdb/walkabout
+
+Usage:
+  walkabout [flags]
+
+Examples:
+
+walkabout InterfaceName 
+  Generates support code to make all struct types that implement
+  the given interface walkable.
+
+walkabout --union UnionInterface ( InterfaceName | StructName ) ...
+  Generates an interface called "UnionInterface" which will be
+  implemented by the named struct types, or those structs that implement
+  the named interface(s).
+
+walkabout --union UnionInterface --reachable ( InterfaceName | StructName ) ...
+  As above, but also includes all types in the same package that are
+  transitively reachable from the named types.  This is useful for
+  refitting an entire package where the existing types may not all
+  share a common interface.
+
+
+Flags:
+  -d, --dir string     the directory to operate in (default ".")
+  -h, --help           help for walkabout
+  -o, --out string     overrides the output file name
+  -r, --reachable      make all transitively reachable types in the same package also
+                       implement the --union interface. Only valid when using --union.
+  -u, --union string   generate a new interface with the given name to be used as the
+                       visitable interface.
+```
+
+## Api
 
 Walkabout generates two complementary APIs:
 * A [traversal API](https://godoc.org/github.com/cockroachdb/walkabout/demo#example-package--Walk)
@@ -23,6 +59,10 @@ Walkabout generates two complementary APIs:
   and `reflect.Value` is not used.
 * Dependency-free: the generated code and support library depend only
   on built-in packages.
+
+The `--union` and `--reachable` flags can be used to refit an entire
+package at once, allowing you to just specify a collection of seed
+types to generate an entire visitable API around.
 
 ## Walkthrough
 

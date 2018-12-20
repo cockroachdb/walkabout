@@ -15,27 +15,56 @@
 
 package gen
 
-import (
-	"errors"
-	"github.com/spf13/cobra"
-)
+import "github.com/spf13/cobra"
 
 // Main is the entry point for the walkabout tool.  It is invoked from
 // a main() method in the top-level walkabout package.
 func Main() error {
-	var dir string
+	var config config
 	rootCmd := &cobra.Command{
-		Use:     "walkabout",
-		Short:   "walkabout generates a visitor pattern from golang structs implementing a named interface",
-		Example: "walkabout InterfaceName",
+		Use: "walkabout",
+		Short: `walkabout is a code-generation tool to enhance struct types.
+https://github.com/cockroachdb/walkabout`,
+		Example: `
+walkabout InterfaceName 
+  Generates support code to make all struct types that implement
+  the given interface walkable.
+
+walkabout --union UnionInterface ( InterfaceName | StructName ) ...
+  Generates an interface called "UnionInterface" which will be
+  implemented by the named struct types, or those structs that implement
+  the named interface(s).
+
+walkabout --union UnionInterface --reachable ( InterfaceName | StructName ) ...
+  As above, but also includes all types in the same package that are
+  transitively reachable from the named types.  This is useful for
+  refitting an entire package where the existing types may not all
+  share a common interface.
+`,
+		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) == 0 {
-				return errors.New("at least one interface name must be specified")
+			config.typeNames = args
+			g, err := newGeneration(config)
+			if err != nil {
+				return err
 			}
-			return newGeneration(dir, args).Execute()
+			return g.Execute()
 		},
-		SilenceUsage: true,
 	}
-	rootCmd.Flags().StringVarP(&dir, "dir", "d", ".", "the directory to operate in")
+
+	rootCmd.Flags().StringVarP(&config.dir, "dir", "d", ".",
+		"the directory to operate in")
+
+	rootCmd.Flags().StringVarP(&config.outFile, "out", "o", "",
+		"overrides the output file name")
+
+	rootCmd.Flags().BoolVarP(&config.reachable, "reachable", "r", false,
+		`make all transitively reachable types in the same package also
+implement the --union interface. Only valid when using --union.`)
+
+	rootCmd.Flags().StringVarP(&config.union, "union", "u", "",
+		`generate a new interface with the given name to be used as the
+visitable interface.`)
+
 	return rootCmd.Execute()
 }
