@@ -53,7 +53,7 @@ func (a *Abstract) ChildAt(index int) *Abstract {
 			panic(fmt.Errorf("index out of range: %d", index))
 		}
 		chaseType = a.typeData.elemData
-		chaseValue = Ptr(uintptr(a.value) + uintptr(index)*chaseType.SizeOf)
+		chaseValue = Ptr(header.Data + uintptr(index)*chaseType.SizeOf)
 	default:
 		// We should never have returned an Abstract wrapping anything other
 		// than a struct or a slice. Getting here indicates a problem

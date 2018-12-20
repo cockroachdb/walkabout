@@ -33,7 +33,8 @@ func TestChildAt(t *testing.T) {
 	// Expect all but by-value values to be nil.
 	t.Run("empty", func(t *testing.T) {
 		a := assert.New(t)
-		c := l.ContainerType{}
+		c := &l.ContainerType{}
+		abstractWalk(c)
 		for i, j := 0, c.NumChildren(); i < j; i++ {
 			child := c.ChildAt(i)
 			switch i {
@@ -49,6 +50,7 @@ func TestChildAt(t *testing.T) {
 	t.Run("useValuePtrs=true", func(t *testing.T) {
 		a := assert.New(t)
 		c, _ := l.NewContainer(true)
+		abstractWalk(c)
 		for i, j := 0, c.NumChildren(); i < j; i++ {
 			child := c.ChildAt(i)
 			switch i {
@@ -63,6 +65,7 @@ func TestChildAt(t *testing.T) {
 	t.Run("useValuePtrs=false", func(t *testing.T) {
 		a := assert.New(t)
 		c, _ := l.NewContainer(false)
+		abstractWalk(c)
 		for i, j := 0, c.NumChildren(); i < j; i++ {
 			child := c.ChildAt(i)
 			switch i {
@@ -90,6 +93,15 @@ func TestMutations(t *testing.T) {
 		x, count := l.NewContainer(false)
 		checkMutations(t, x, count)
 	})
+}
+
+func abstractWalk(x l.TargetAbstract) {
+	if x == nil {
+		return
+	}
+	for i, j := 0, x.NumChildren(); i < j; i++ {
+		abstractWalk(x.ChildAt(i))
+	}
 }
 
 func checkMutations(t *testing.T, x *l.ContainerType, count int) {
