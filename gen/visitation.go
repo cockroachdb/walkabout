@@ -174,6 +174,15 @@ func (v *visitation) visitableType(typ types.Type, isReachable bool) (visitableT
 				}
 				v.SourceTypes[sourceName] = ret
 				v.ensureTypeId(ret)
+
+				// If we've added an interface because it's reachable, we need
+				// to also go back and look for any structs that may be implied
+				// by the interface.
+				if isReachable && v.includeReachable {
+					v.filters = append(v.filters, ret)
+					v.populateGeneratedTypes()
+				}
+
 				return ret, true
 			}
 

@@ -19,6 +19,7 @@ func init() {
 	TemplateSources["10api"] = `
 {{- $v := . -}}
 {{- $Abstract := T $v "Abstract" -}}
+{{- $Action := T $v "Action" -}}
 {{- $Context := T $v "Context" -}}
 {{- $Decision := T $v "Decision" -}}
 {{- $Root := $v.Root -}}
@@ -89,14 +90,50 @@ func (c *{{ $Context }}) Halt() {{ $Decision }} {
 	return {{ $Decision }}{impl: e.DecisionImpl{Halt: true}}
 }
 
+// Actions will perform the given actions in place of visiting values
+// that would normally be visited.  This allows callers to control
+// specific field visitation order or to insert additional callbacks
+// between visiting certain values.
+func (c *{{ $Context }}) Actions(actions ...{{ $Action }}) {{ $Decision }} {
+	if actions == nil || len(actions) == 0 {
+		return c.Skip()
+	}
+
+	ret := make([]e.ActionImpl, len(actions))
+	for i, a := range actions {
+		ret[i] = e.ActionImpl(a)
+	}
+
+	return {{ $Decision }} { impl: e.DecisionImpl { Actions: ret } }
+}
+
 // Skip will not traverse the fields of the current object.
 func (c *{{ $Context }}) Skip() {{ $Decision }} {
 	return {{ $Decision }}{impl: e.DecisionImpl{Skip: true}}
 }
 
 // {{ $Decision }} is used by {{ $WalkerFn }} to control visitation.
+// The {{ $Context }} provided to a {{ $WalkerFn }} acts as a factory
+// for {{ $Decision }} instances. In general, the factory methods
+// choose a traversal strategy and additional methods on the
+// {{ $Decision }} can achieve a variety of side-effects.
 type {{ $Decision }} struct {
 	impl e.DecisionImpl
+}
+
+// Intercept registers a function to be called immediately before 
+// visiting each field or element of the current value.
+func (d {{ $Decision }}) Intercept(fn {{ $WalkerFn }}) {{ $Decision }} {
+	d.impl.Intercept = fn
+	return d
+}
+
+// Post registers a post-visit function, which will be called after the
+// fields of the current object. The function can make another decision
+// about the current value.
+func (d {{ $Decision }}) Post(fn {{ $WalkerFn }}) {{ $Decision }} {
+	d.impl.Post = fn
+	return d
 }
 
 // Replace allows the currently-visited value to be replaced. All
@@ -116,12 +153,20 @@ func (d {{ $Decision }}) Replace(x {{ $Root }}) {{ $Decision }} {
 	return d
 }
 
-// Post registers a post-visit function, which will be called after the
-// fields of the current object. The function can make another decision
-// about the current value.
-func (d {{ $Decision }}) Post(fn {{ $WalkerFn }}) {{ $Decision }} {
-	d.impl.Post = fn
-	return d
+
+// {{ $Action }} is used by {{ $Context }}.Actions() and allows users
+// to have fine-grained control over traversal.
+type {{ $Action }} e.ActionImpl
+
+// ActionVisit constructs a {{ $Action }} that will visit the given value.
+func (*{{ $Context }}) ActionVisit(x {{ $Root }}) {{ $Action }} {
+	d := {{ $Decision }}{}.Replace(x)
+	return {{ $Action }} (e.ActionVisitTypeId(d.impl.ReplacementType, d.impl.Replacement))
+}
+
+// ActionCall constructs a {{ $Action }} that will invoke the given callback.
+func (*{{ $Context }}) ActionCall(fn func()error) {{ $Action }} {
+	return {{ $Action }} (e.ActionCall(fn))
 }
 `
 }

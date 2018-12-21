@@ -17,7 +17,10 @@ package engine
 
 // This file contains various type definitions.
 
-import "unsafe"
+import (
+	"fmt"
+	"unsafe"
+)
 
 // A TypeId is an opaque reference to a visitable type. These are
 // assigned by the code-generator and their specific values and order
@@ -46,6 +49,9 @@ type Ptr unsafe.Pointer
 // FacadeFn is a generated function type that depends on the visitable
 // interface.
 type FacadeFn interface{}
+
+// ActionFn describes a simple callback function.
+type ActionFn func() error
 
 // TypeData contains metadata and accessors that are produced by the
 // code generator.
@@ -104,10 +110,70 @@ type ContextImpl struct{}
 
 // DecisionImpl is wrapped by generated, type-safe facades.
 type DecisionImpl struct {
+	Actions         []ActionImpl
 	Error           error
 	Halt            bool
+	Intercept       FacadeFn
 	Post            FacadeFn
 	Replacement     Ptr
 	ReplacementType TypeId
 	Skip            bool
+}
+
+// ActionImpl allows user-defined actions to be inserted into the
+// visitation flow.
+type ActionImpl struct {
+	call      ActionFn
+	dirty     bool
+	post      FacadeFn
+	typeData  *TypeData
+	value     Ptr
+	valueType TypeId
+}
+
+// ActionCall constructs an action which will invoke the function.
+func ActionCall(fn ActionFn) ActionImpl {
+	return ActionImpl{call: fn}
+}
+
+// ActionVisit constructs an action which will visit the given value.
+func ActionVisit(td *TypeData, value Ptr) ActionImpl {
+	return ActionImpl{typeData: td, value: value, valueType: td.TypeId}
+}
+
+// ActionVisitTypeId constructs an action which will visit the given value.
+func ActionVisitTypeId(id TypeId, value Ptr) ActionImpl {
+	return ActionImpl{value: value, valueType: id}
+}
+
+// apply updates the action with information from a decision.
+func (a *ActionImpl) apply(e *Engine, d DecisionImpl) error {
+	if d.Error != nil {
+		return d.Error
+	}
+	if d.Post != nil {
+		a.post = d.Post
+	}
+	if d.Replacement != nil {
+		curType := a.typeData
+		// The user can only change the type of the object if it's being
+		// assigned to an interface slot. Even then, we'll want to
+		// check the assignability.
+		if curType.TypeId != d.ReplacementType {
+			if curType.Kind == KindInterface {
+				nextTypeId := curType.IntfType(d.Replacement)
+				if nextTypeId == 0 {
+					return fmt.Errorf(
+						"type %d is unknown or not assignable to %d", nextTypeId, curType.TypeId)
+				}
+				curType = e.typeData(nextTypeId)
+			} else {
+				return fmt.Errorf(
+					"cannot change type of %d to %d", curType.TypeId, d.ReplacementType)
+			}
+		}
+		a.dirty = true
+		a.value = d.Replacement
+	}
+	return nil
 }

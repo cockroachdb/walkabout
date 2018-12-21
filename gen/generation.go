@@ -25,6 +25,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/pkg/errors"
 )
@@ -170,6 +171,15 @@ func (g *generation) Execute() error {
 			}
 
 			v.filters = append(v.filters, filter)
+
+			// If the type refers to anything defined in a test file, generate
+			// into a _test.go file as well.
+			if obj.Pos().IsValid() {
+				position := g.fileSet.Position(obj.Pos())
+				if strings.HasSuffix(position.Filename, "_test.go") {
+					v.inTest = true
+				}
+			}
 		}
 	}
 
@@ -196,6 +206,9 @@ func (g *generation) importSources() error {
 	ctx := build.Default
 	// Don't re-import code that we've generated.
 	ctx.BuildTags = append(ctx.BuildTags, "walkaboutAnalysis")
+	if g.extraTestSource != nil {
+		ctx.BuildTags = append(ctx.BuildTags, "generationTest")
+	}
 
 	pkg, err := ctx.ImportDir(g.dir, 0)
 	if err != nil {
