@@ -14,7 +14,7 @@ install:
 	go install 
 
 test: generate
-	go test ./... 
+	go test -vet all ./...
 
 .PHONY: clean generate fmt install test
 

@@ -93,7 +93,7 @@ func (a *Abstract) ChildAt(index int) *Abstract {
 				return nil
 			}
 			chaseType = a.engine.typeData(elemType)
-			chaseValue = Ptr(((*[2]uintptr)(chaseValue))[1])
+			chaseValue = ((*[2]Ptr)(chaseValue))[1]
 		default:
 			panic(fmt.Errorf("unimplemented: %d", chaseType.Kind))
 		}

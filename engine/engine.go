@@ -253,7 +253,7 @@ enter:
 	case KindSlice:
 		// Slices have the same general flow as a struct; they're just
 		// a sequence of visitable values.
-		header := *(*reflect.SliceHeader)(curSlot.value)
+		header := (*reflect.SliceHeader)(curSlot.value)
 		if header.Len == 0 {
 			goto unwind
 		}
@@ -265,7 +265,7 @@ enter:
 
 	case KindInterface:
 		// An interface is a type-tag and a pointer.
-		ptr := Ptr((*[2]uintptr)(curSlot.value)[1])
+		ptr := (*[2]Ptr)(curSlot.value)[1]
 		// We do need to map the type-tag to our TypeId.
 		// Perhaps this could be accomplished with a map?
 		elem := curType.IntfType(curSlot.value)
@@ -341,7 +341,7 @@ unwind:
 		case KindSlice:
 			// Create a new slice instance and populate the elements.
 			next := curType.NewSlice(returning.Count)
-			toHeader := *(*reflect.SliceHeader)(next)
+			toHeader := (*reflect.SliceHeader)(next)
 			elemTd := curType.elemData
 
 			// Copy the elements across.
