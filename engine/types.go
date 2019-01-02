@@ -193,7 +193,7 @@ type Action struct {
 }
 
 // apply updates the action with information from a decision.
-func (a *Action) apply(e *Engine, d Decision) error {
+func (a *Action) apply(e *Engine, d Decision, assignableTo *TypeData) error {
 	if d.error != nil {
 		return d.error
 	}
@@ -201,21 +201,21 @@ func (a *Action) apply(e *Engine, d Decision) error {
 		a.post = d.post
 	}
 	if d.replacement != nil {
-		curType := a.typeData
-		// The user can only change the type of the object if it's being
-		// assigned to an interface slot. Even then, we'll want to
-		// check the assignability.
-		if curType.TypeId != d.replacementType {
-			if curType.Kind == KindInterface {
-				nextTypeId := curType.IntfType(d.replacement)
-				if nextTypeId == 0 {
+		if a.typeData.TypeId != d.replacementType {
+			// The user can only change the type of the object if it's being
+			// assigned to an interface slot. Even then, we'll want to
+			// check the assignability.
+			if assignableTo.Kind == KindInterface {
+				if assignableTo.IntfWrap(d.replacementType, d.replacement) == nil {
 					return fmt.Errorf(
-						"type %d is unknown or not assignable to %d", nextTypeId, curType.TypeId)
+						"type %s is unknown or not assignable to %s",
+						e.Stringify(d.replacementType), e.Stringify(assignableTo.TypeId))
 				}
-				curType = e.typeData(nextTypeId)
+				a.typeData = e.typeData(d.replacementType)
 			} else {
 				return fmt.Errorf(
-					"cannot change type of %d to %d", curType.TypeId, d.replacementType)
+					"cannot change type of %s to %s",
+					e.Stringify(assignableTo.TypeId), e.Stringify(d.replacementType))
 			}
 		}
 		a.dirty = true

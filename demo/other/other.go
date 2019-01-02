@@ -23,8 +23,7 @@ package other
 // directories in a single pass, which seems fraught).
 type Reachable struct{}
 
-// This type is in another package, but since it implements the
-// visitable interface, it's eligible for [reachable && !union] mode.
+// This type is in another package, so it's not eligible for inclusion.
 type Implemetor struct {
 	val string
 }

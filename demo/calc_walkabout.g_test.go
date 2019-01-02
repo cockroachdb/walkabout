@@ -384,14 +384,24 @@ var calcEngine = e.New(e.TypeMap{
 		IntfWrap: func(id e.TypeId, x e.Ptr) e.Ptr {
 			var d Calc
 			switch CalcTypeId(id) {
+			case CalcTypeBinaryOp:
+				d = (*BinaryOp)(x)
 			case CalcTypeBinaryOpPtr:
 				d = *(**BinaryOp)(x)
+			case CalcTypeCalculation:
+				d = (*Calculation)(x)
 			case CalcTypeCalculationPtr:
 				d = *(**Calculation)(x)
+			case CalcTypeFunc:
+				d = (*Func)(x)
 			case CalcTypeFuncPtr:
 				d = *(**Func)(x)
+			case CalcTypeScalar:
+				d = (*Scalar)(x)
 			case CalcTypeScalarPtr:
 				d = *(**Scalar)(x)
+			default:
+				return nil
 			}
 			return e.Ptr(&d)
 		},
@@ -420,12 +430,20 @@ var calcEngine = e.New(e.TypeMap{
 		IntfWrap: func(id e.TypeId, x e.Ptr) e.Ptr {
 			var d Expr
 			switch CalcTypeId(id) {
+			case CalcTypeBinaryOp:
+				d = (*BinaryOp)(x)
 			case CalcTypeBinaryOpPtr:
 				d = *(**BinaryOp)(x)
+			case CalcTypeFunc:
+				d = (*Func)(x)
 			case CalcTypeFuncPtr:
 				d = *(**Func)(x)
+			case CalcTypeScalar:
+				d = (*Scalar)(x)
 			case CalcTypeScalarPtr:
 				d = *(**Scalar)(x)
+			default:
+				return nil
 			}
 			return e.Ptr(&d)
 		},

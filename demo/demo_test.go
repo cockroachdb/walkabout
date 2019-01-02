@@ -16,6 +16,7 @@
 package demo_test
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 
@@ -53,6 +54,19 @@ func Example_abstract() {
 	//13: []Target *demo.targetAbstract
 	//14: []*Target *demo.targetAbstract
 	//15: []Target *demo.targetAbstract
+}
+
+// This example shows how an error can be returned from a visitor function.
+func Example_error() {
+	data, _ := demo.NewContainer(true)
+	ret, changed, err := data.WalkTarget(
+		func(ctx demo.TargetContext, x demo.Target) demo.TargetDecision {
+			return ctx.Error(errors.New("an error"))
+		})
+	fmt.Println(ret, changed, err)
+
+	//Output:
+	//<nil> false an error
 }
 
 // This example demonstrates how enhanced visitable types can be

@@ -45,10 +45,8 @@ type frame struct {
 }
 
 // Active retrieves the active slot.
-func (f *frame) Active() (s *Action, td *TypeData) {
-	s = f.Slot(f.Idx)
-	td = s.typeData
-	return
+func (f *frame) Active() *Action {
+	return f.Slot(f.Idx)
 }
 
 // Slot is used to access a storage slot within the frame.
@@ -154,8 +152,8 @@ func (e *Engine) Execute(fn FacadeFn, t TypeId, x Ptr) (Ptr, bool, error) {
 
 	curFrame := &stack[0]
 	curSlot := curFrame.Zero()
-	curType := curSlot.typeData
 	halting := false
+	parentSlot := curSlot
 
 enter:
 	if curSlot.call != nil {
@@ -174,8 +172,8 @@ enter:
 	// disallows recursive type definitions, so it's impossible for the
 	// first field of a struct to be exactly the struct type.
 	for l := 0; l < stackIdx; l++ {
-		onStack, onStackType := stack[l].Active()
-		if onStack.value == curSlot.value && onStackType.TypeId == curType.TypeId {
+		onStack := stack[l].Active()
+		if onStack.value == curSlot.value && onStack.typeData.TypeId == curSlot.typeData.TypeId {
 			goto nextSlot
 		}
 	}
@@ -184,7 +182,7 @@ enter:
 	// the current value doesn't need a new frame to be pushed, we'll jump
 	// into the unwind block.
 	entering = &stack[stackIdx+1]
-	switch curType.Kind {
+	switch curSlot.typeData.Kind {
 	case KindPointer:
 		// We dereference the pointer and push the resulting memory
 		// location as a 1-slot frame.
@@ -193,13 +191,13 @@ enter:
 			goto unwind
 		}
 		enter(curFrame.Intercept, 1)
-		entering.SetSlot(e, 0, ctx.ActionVisit(curType.elemData, ptr))
+		entering.SetSlot(e, 0, ctx.ActionVisit(curSlot.typeData.elemData, ptr))
 
 	case KindStruct:
 		// Allow parent frames to intercept child values.
 		if curFrame.Intercept != nil {
-			d := curType.Facade(ctx, curFrame.Intercept, curSlot.value)
-			if err := curSlot.apply(e, d); err != nil {
+			d := curSlot.typeData.Facade(ctx, curFrame.Intercept, curSlot.value)
+			if err := curSlot.apply(e, d, parentSlot.typeData); err != nil {
 				return nil, false, err
 			}
 			if d.halt {
@@ -214,9 +212,9 @@ enter:
 		// Structs are where we call out to user logic via a generated,
 		// type-safe facade. The user code can trigger various flow-control
 		// to happen.
-		d := curType.Facade(ctx, fn, curSlot.value)
+		d := curSlot.typeData.Facade(ctx, fn, curSlot.value)
 		// Incorporate replacements, bail on error, etc.
-		if err := curSlot.apply(e, d); err != nil {
+		if err := curSlot.apply(e, d, parentSlot.typeData); err != nil {
 			return nil, false, err
 		}
 		// If the user wants to stop, we'll set the flag and just let the
@@ -227,7 +225,7 @@ enter:
 		// Slices and structs have very similar approaches, we create a new
 		// frame, add slots for each field or slice element, and then jump
 		// back to the top.
-		fieldCount := len(curType.Fields)
+		fieldCount := len(curSlot.typeData.Fields)
 		switch {
 		case halting, d.skip:
 			goto unwind
@@ -246,7 +244,7 @@ enter:
 				goto unwind
 			}
 			enter(d.intercept, fieldCount)
-			for i, f := range curType.Fields {
+			for i, f := range curSlot.typeData.Fields {
 				fPtr := Ptr(uintptr(curSlot.value) + f.Offset)
 				entering.SetSlot(e, i, ctx.ActionVisit(f.targetData, fPtr))
 			}
@@ -260,7 +258,7 @@ enter:
 			goto unwind
 		}
 		enter(curFrame.Intercept, header.Len)
-		eltTd := curType.elemData
+		eltTd := curSlot.typeData.elemData
 		for i, off := 0, uintptr(0); i < header.Len; i, off = i+1, off+eltTd.SizeOf {
 			entering.SetSlot(e, i, ctx.ActionVisit(eltTd, Ptr(header.Data+off)))
 		}
@@ -270,7 +268,7 @@ enter:
 		ptr := (*[2]Ptr)(curSlot.value)[1]
 		// We do need to map the type-tag to our TypeId.
 		// Perhaps this could be accomplished with a map?
-		elem := curType.IntfType(curSlot.value)
+		elem := curSlot.typeData.IntfType(curSlot.value)
 		// Need to check elem==0 in the case of a "typed nil" value.
 		if elem == 0 || ptr == nil {
 			goto unwind
@@ -279,7 +277,7 @@ enter:
 		entering.SetSlot(e, 0, ctx.ActionVisit(e.typeData(elem), ptr))
 
 	default:
-		panic(fmt.Errorf("unexpected kind: %d", curType.Kind))
+		panic(fmt.Errorf("unexpected kind: %d", curSlot.typeData.Kind))
 	}
 
 	// TODO(bob): Be able to fork off to visit the slots in parallel
@@ -291,9 +289,9 @@ enter:
 		copy(temp, stack)
 		stack = temp
 	}
+	parentSlot = curSlot
 	curFrame = entering
 	curSlot = curFrame.Zero()
-	curType = curSlot.typeData
 
 	// We've pushed a new frame onto the stack, so we'll restart.
 	goto enter
@@ -302,8 +300,8 @@ unwind:
 	// Execute any user-provided callback. This logic is pretty much
 	// the same as above, although we don't respect all decision options.
 	if curSlot.post != nil {
-		d := curType.Facade(ctx, curSlot.post, curSlot.value)
-		if err := curSlot.apply(e, d); err != nil {
+		d := curSlot.typeData.Facade(ctx, curSlot.post, curSlot.value)
+		if err := curSlot.apply(e, d, parentSlot.typeData); err != nil {
 			return nil, false, err
 		}
 		if d.halt {
@@ -314,22 +312,19 @@ unwind:
 	// If the slot reports that it's dirty, we want to propagate
 	// the changes upwards in the stack.
 	if curSlot.dirty {
-		if stackIdx > 0 {
-			parentFrame, _ := stack[stackIdx-1].Active()
-			parentFrame.dirty = true
-		}
+		parentSlot.dirty = true
 
 		// This switch statement is the inverse of the above. We'll fold the
 		// returning frame into a replacement value for the current slot.
-		switch curType.Kind {
+		switch curSlot.typeData.Kind {
 		case KindStruct:
 			// Allocate a replacement instance of the struct.
-			next := curType.NewStruct()
+			next := curSlot.typeData.NewStruct()
 			// Perform a shallow copy to catch non-visitable fields.
-			curType.Copy(next, curSlot.value)
+			curSlot.typeData.Copy(next, curSlot.value)
 
 			// Copy the visitable fields into the new struct.
-			for i, f := range curType.Fields {
+			for i, f := range curSlot.typeData.Fields {
 				fPtr := Ptr(uintptr(next) + f.Offset)
 				f.targetData.Copy(fPtr, returning.Slot(i).value)
 			}
@@ -342,9 +337,9 @@ unwind:
 
 		case KindSlice:
 			// Create a new slice instance and populate the elements.
-			next := curType.NewSlice(returning.Count)
+			next := curSlot.typeData.NewSlice(returning.Count)
 			toHeader := (*reflect.SliceHeader)(next)
-			elemTd := curType.elemData
+			elemTd := curSlot.typeData.elemData
 
 			// Copy the elements across.
 			for i := 0; i < returning.Count; i++ {
@@ -356,10 +351,10 @@ unwind:
 		case KindInterface:
 			// Swap out the iface pointer just like the pointer case above.
 			next := returning.Zero()
-			curSlot.value = curType.IntfWrap(next.typeData.TypeId, next.value)
+			curSlot.value = curSlot.typeData.IntfWrap(next.typeData.TypeId, next.value)
 
 		default:
-			panic(fmt.Errorf("unimplemented: %d", curType.Kind))
+			panic(fmt.Errorf("unimplemented: %d", curSlot.typeData.Kind))
 		}
 	}
 
@@ -379,14 +374,19 @@ nextSlot:
 		// Pop a frame off of the stack and update local vars.
 		stackIdx--
 		curFrame = &stack[stackIdx]
-		curSlot, curType = curFrame.Active()
+		curSlot = curFrame.Active()
+		if stackIdx == 0 {
+			parentSlot = curSlot
+		} else {
+			parentSlot = stack[stackIdx-1].Active()
+		}
 		// We'll jump back to the unwinding code to finish the slot of the
 		// frame which is now on top.
 		goto unwind
 	} else {
 		// We're just advancing to the next slot, so we jump back to the
 		// top.
-		curSlot, curType = curFrame.Active()
+		curSlot = curFrame.Active()
 		goto enter
 	}
 }

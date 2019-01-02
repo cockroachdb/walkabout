@@ -352,9 +352,11 @@ var targetEngine = e.New(e.TypeMap{
 			var d EmbedsTarget
 			switch TargetTypeId(id) {
 			case TargetTypeByValType:
-				d = *(*ByValType)(x)
+				d = (*ByValType)(x)
 			case TargetTypeByValTypePtr:
 				d = *(**ByValType)(x)
+			default:
+				return nil
 			}
 			return e.Ptr(&d)
 		},
@@ -385,14 +387,20 @@ var targetEngine = e.New(e.TypeMap{
 		IntfWrap: func(id e.TypeId, x e.Ptr) e.Ptr {
 			var d Target
 			switch TargetTypeId(id) {
+			case TargetTypeByRefType:
+				d = (*ByRefType)(x)
 			case TargetTypeByRefTypePtr:
 				d = *(**ByRefType)(x)
 			case TargetTypeByValType:
-				d = *(*ByValType)(x)
+				d = (*ByValType)(x)
 			case TargetTypeByValTypePtr:
 				d = *(**ByValType)(x)
+			case TargetTypeContainerType:
+				d = (*ContainerType)(x)
 			case TargetTypeContainerTypePtr:
 				d = *(**ContainerType)(x)
+			default:
+				return nil
 			}
 			return e.Ptr(&d)
 		},

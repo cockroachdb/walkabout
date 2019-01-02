@@ -61,8 +61,13 @@ var {{ $Engine }} = e.New(e.TypeMap {
 		var d {{ $s }}
 		switch {{ $TypeId }}(id) {
 		{{ range $imp := Implementors $s -}}
-		case {{ TypeId $imp.Actual }}: d = *(*{{ $imp.Actual }})(x);
+			{{- if IsPointer $imp.Actual -}}
+				case {{ TypeId $imp.Actual.Elem }}: d = (*{{ $imp.Actual.Elem }})(x);
+				case {{ TypeId $imp.Actual }}: d = *(*{{ $imp.Actual }})(x);
+			{{- end -}}
 		{{- end }}
+		default:
+			return nil
 		}
 		return e.Ptr(&d)
 	},

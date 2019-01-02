@@ -24,9 +24,22 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cockroachdb/walkabout/demo/other"
+
 	l "github.com/cockroachdb/walkabout/demo"
 	"github.com/stretchr/testify/assert"
 )
+
+func TestBadMutations(t *testing.T) {
+	a := assert.New(t)
+
+	d := l.ByValType{}
+	_, _, err := d.WalkTarget(func(ctx l.TargetContext, x l.Target) l.TargetDecision {
+		return ctx.Continue().Replace(&l.ByRefType{})
+	})
+	a.EqualError(err, "cannot change type of ByValType to ByRefType")
+
+}
 
 // Verify data extraction.
 func TestChildAt(t *testing.T) {
@@ -76,6 +89,80 @@ func TestChildAt(t *testing.T) {
 				a.NotNilf(child, "at index %d", i)
 			}
 		}
+	})
+}
+
+// TestCycleBreak creates a cyclical datastructure.
+func TestCycleBreak(t *testing.T) {
+	d, _ := l.NewContainer(false)
+	d.Container = d
+	_, _, _ = d.WalkTarget(func(ctx l.TargetContext, x l.Target) (d l.TargetDecision) {
+		return
+	})
+}
+
+// TestInterfaceChange ensures that an interface context allows the
+// concrete type to be changed out.
+func TestInterfaceChange(t *testing.T) {
+	t.Run("test top level", func(t *testing.T) {
+		a := assert.New(t)
+
+		d := l.ByValType{}
+		ret, changed, err := l.WalkTarget(d, func(ctx l.TargetContext, x l.Target) l.TargetDecision {
+			return ctx.Continue().Replace(&l.ByRefType{})
+		})
+		if !a.NoError(err) {
+			return
+		}
+		a.True(changed, "should have changed")
+		a.IsType(&l.ByRefType{}, ret)
+	})
+	t.Run("test interface field", func(t *testing.T) {
+		a := assert.New(t)
+
+		ref := l.Target(l.ByValType{Val: "ChangeMe"})
+		d := l.ContainerType{
+			AnotherTarget:    l.ByValType{Val: "ChangeMe"},
+			AnotherTargetPtr: &ref,
+		}
+		d2, changed, err := d.WalkTarget(func(ctx l.TargetContext, x l.Target) (d l.TargetDecision) {
+			if x.Value() == "ChangeMe" {
+				d = d.Replace(&l.ByRefType{Val: "Changed"})
+			}
+			return
+		})
+		if !a.NoError(err) {
+			return
+		}
+		a.True(changed)
+		a.NotEqual(d, d2)
+		a.IsType(&l.ByRefType{}, d2.AnotherTarget)
+		a.IsType(&l.ByRefType{}, *d2.AnotherTargetPtr)
+		// Ensure that the underlying field wasn't touched.
+		a.IsType(l.ByValType{}, ref)
+	})
+	t.Run("cross-assign", func(t *testing.T) {
+		a := assert.New(t)
+
+		c := l.ContainerType{
+			EmbedsTarget: l.ByValType{Val: "ChangeMe"},
+		}
+		_, _, err := c.WalkTarget(func(ctx l.TargetContext, x l.Target) (d l.TargetDecision) {
+			if x.Value() == "ChangeMe" {
+				d = d.Replace(&l.ByRefType{Val: "Not an EmbedsTarget"})
+			}
+			return
+		})
+		a.EqualError(err, "type ByRefType is unknown or not assignable to EmbedsTarget")
+	})
+	t.Run("unknown type", func(t *testing.T) {
+		a := assert.New(t)
+		a.PanicsWithValue("unhandled type passed to Replace(). Is the generated code out of date?", func() {
+			d := l.ByValType{}
+			_, _, _ = l.WalkTarget(d, func(ctx l.TargetContext, x l.Target) l.TargetDecision {
+				return ctx.Continue().Replace(&other.Implemetor{})
+			})
+		})
 	})
 }
 
