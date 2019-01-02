@@ -21,6 +21,7 @@ package engine
 import (
 	"fmt"
 	"reflect"
+	"strings"
 )
 
 // See discussion on frame.Slots.
@@ -227,7 +228,7 @@ enter:
 		// back to the top.
 		fieldCount := len(curType.Fields)
 		switch {
-		case d.Skip:
+		case halting, d.Skip:
 			goto unwind
 
 		case d.Actions != nil:
@@ -386,6 +387,34 @@ nextSlot:
 		// top.
 		curSlot, curType = curFrame.Active()
 		goto enter
+	}
+}
+
+// Stringify returns a string representation of the given type that
+// is suitable for debugging purposes.
+func (e *Engine) Stringify(id TypeId) string {
+	if id == 0 {
+		return "<NIL>"
+	}
+	ret := strings.Builder{}
+	td := e.typeData(id)
+	for {
+		switch td.Kind {
+		case KindInterface, KindStruct:
+			if ret.Len() == 0 {
+				return td.Name
+			}
+			ret.WriteString(td.Name)
+			return ret.String()
+		case KindPointer:
+			ret.WriteRune('*')
+			td = td.elemData
+		case KindSlice:
+			ret.WriteString("[]")
+			td = td.elemData
+		default:
+			panic(fmt.Errorf("unsupported: %d", td.Kind))
+		}
 	}
 }
 

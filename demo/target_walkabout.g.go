@@ -283,6 +283,7 @@ var targetEngine = e.New(e.TypeMap{
 			return fn.(TargetWalkerFn)(TargetContext{impl}, (*ByRefType)(x)).impl
 		},
 		Fields:    []e.FieldInfo{},
+		Name:      "ByRefType",
 		NewStruct: func() e.Ptr { return e.Ptr(&ByRefType{}) },
 		SizeOf:    unsafe.Sizeof(ByRefType{}),
 		Kind:      e.KindStruct,
@@ -294,6 +295,7 @@ var targetEngine = e.New(e.TypeMap{
 			return fn.(TargetWalkerFn)(TargetContext{impl}, (*ByValType)(x)).impl
 		},
 		Fields:    []e.FieldInfo{},
+		Name:      "ByValType",
 		NewStruct: func() e.Ptr { return e.Ptr(&ByValType{}) },
 		SizeOf:    unsafe.Sizeof(ByValType{}),
 		Kind:      e.KindStruct,
@@ -322,6 +324,7 @@ var targetEngine = e.New(e.TypeMap{
 			{Name: "InterfacePtrSlice", Offset: unsafe.Offsetof(ContainerType{}.InterfacePtrSlice), Target: e.TypeId(TargetTypeTargetPtrSlice)},
 			{Name: "NamedTargets", Offset: unsafe.Offsetof(ContainerType{}.NamedTargets), Target: e.TypeId(TargetTypeTargetSlice)},
 		},
+		Name:      "ContainerType",
 		NewStruct: func() e.Ptr { return e.Ptr(&ContainerType{}) },
 		SizeOf:    unsafe.Sizeof(ContainerType{}),
 		Kind:      e.KindStruct,
@@ -354,8 +357,9 @@ var targetEngine = e.New(e.TypeMap{
 			}
 			return e.Ptr(&d)
 		},
-		SizeOf: unsafe.Sizeof(EmbedsTarget(nil)),
 		Kind:   e.KindInterface,
+		Name:   "EmbedsTarget",
+		SizeOf: unsafe.Sizeof(EmbedsTarget(nil)),
 		TypeId: e.TypeId(TargetTypeEmbedsTarget),
 	},
 	TargetTypeTarget: {
@@ -391,8 +395,9 @@ var targetEngine = e.New(e.TypeMap{
 			}
 			return e.Ptr(&d)
 		},
-		SizeOf: unsafe.Sizeof(Target(nil)),
 		Kind:   e.KindInterface,
+		Name:   "Target",
+		SizeOf: unsafe.Sizeof(Target(nil)),
 		TypeId: e.TypeId(TargetTypeTarget),
 	},
 
@@ -545,27 +550,7 @@ const (
 	TargetTypeTargetSlice
 )
 
-var targetTypeIdNames = [...]string{
-	"<NIL>",
-	"ByRefType",
-	"*ByRefType",
-	"[]*ByRefType",
-	"[]ByRefType",
-	"ByValType",
-	"*ByValType",
-	"[]*ByValType",
-	"[]ByValType",
-	"ContainerType",
-	"*ContainerType",
-	"EmbedsTarget",
-	"*EmbedsTarget",
-	"Target",
-	"*Target",
-	"[]*Target",
-	"[]Target",
-}
-
 // String is for debugging use only.
 func (t TargetTypeId) String() string {
-	return targetTypeIdNames[t]
+	return targetEngine.Stringify(e.TypeId(t))
 }

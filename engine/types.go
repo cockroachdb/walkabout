@@ -79,6 +79,8 @@ type TypeData struct {
 	IntfWrap func(TypeId, Ptr) Ptr
 	// Kind selects various strategies for handling the given type.
 	Kind Kind
+	// Name is the source name of the type.
+	Name string
 	// NewSlice constructs a slice of the given length and returns a
 	// pointer to the slice's header.
 	NewSlice func(size int) Ptr

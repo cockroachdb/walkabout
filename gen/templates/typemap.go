@@ -35,6 +35,7 @@ var {{ $Engine }} = e.New(e.TypeMap {
 		{ Name: "{{ $f }}", Offset: unsafe.Offsetof({{ $s }}{}.{{ $f }}), Target: e.TypeId({{ TypeId $f.Target }})},
 		{{ end }}
 	},
+	Name: "{{ $s }}",
 	NewStruct: func() e.Ptr { return e.Ptr(&{{ $s }}{}) },
 	SizeOf: unsafe.Sizeof({{ $s }}{}),
 	Kind: e.KindStruct,
@@ -65,8 +66,9 @@ var {{ $Engine }} = e.New(e.TypeMap {
 		}
 		return e.Ptr(&d)
 	},
-	SizeOf: unsafe.Sizeof({{ $s }}(nil)),
 	Kind: e.KindInterface,
+	Name: "{{ $s }}",
+	SizeOf: unsafe.Sizeof({{ $s }}(nil)),
 	TypeId: e.TypeId({{ TypeId $s }}),
 },
 {{ end }}
@@ -104,14 +106,9 @@ const (
 {{ range $t := $v.Types }}{{ TypeId $t }};{{ end }}
 )
 
-var {{ t $v "TypeIdNames" }} = [...]string{
-	"<NIL>",
-	{{ range $t := $v.Types }}"{{ $t }}",
-{{ end }} }
-
 // String is for debugging use only.
 func (t {{ $TypeId }}) String() string {
-	return {{ t $v "TypeIdNames" }}[t]
+	return {{ $Engine }}.Stringify(e.TypeId(t))
 }
 `
 }

@@ -313,6 +313,7 @@ var calcEngine = e.New(e.TypeMap{
 			{Name: "Left", Offset: unsafe.Offsetof(BinaryOp{}.Left), Target: e.TypeId(CalcTypeExpr)},
 			{Name: "Right", Offset: unsafe.Offsetof(BinaryOp{}.Right), Target: e.TypeId(CalcTypeExpr)},
 		},
+		Name:      "BinaryOp",
 		NewStruct: func() e.Ptr { return e.Ptr(&BinaryOp{}) },
 		SizeOf:    unsafe.Sizeof(BinaryOp{}),
 		Kind:      e.KindStruct,
@@ -326,6 +327,7 @@ var calcEngine = e.New(e.TypeMap{
 		Fields: []e.FieldInfo{
 			{Name: "Expr", Offset: unsafe.Offsetof(Calculation{}.Expr), Target: e.TypeId(CalcTypeExpr)},
 		},
+		Name:      "Calculation",
 		NewStruct: func() e.Ptr { return e.Ptr(&Calculation{}) },
 		SizeOf:    unsafe.Sizeof(Calculation{}),
 		Kind:      e.KindStruct,
@@ -339,6 +341,7 @@ var calcEngine = e.New(e.TypeMap{
 		Fields: []e.FieldInfo{
 			{Name: "Args", Offset: unsafe.Offsetof(Func{}.Args), Target: e.TypeId(CalcTypeExprSlice)},
 		},
+		Name:      "Func",
 		NewStruct: func() e.Ptr { return e.Ptr(&Func{}) },
 		SizeOf:    unsafe.Sizeof(Func{}),
 		Kind:      e.KindStruct,
@@ -350,6 +353,7 @@ var calcEngine = e.New(e.TypeMap{
 			return fn.(CalcWalkerFn)(CalcContext{impl}, (*Scalar)(x)).impl
 		},
 		Fields:    []e.FieldInfo{},
+		Name:      "Scalar",
 		NewStruct: func() e.Ptr { return e.Ptr(&Scalar{}) },
 		SizeOf:    unsafe.Sizeof(Scalar{}),
 		Kind:      e.KindStruct,
@@ -390,8 +394,9 @@ var calcEngine = e.New(e.TypeMap{
 			}
 			return e.Ptr(&d)
 		},
-		SizeOf: unsafe.Sizeof(Calc(nil)),
 		Kind:   e.KindInterface,
+		Name:   "Calc",
+		SizeOf: unsafe.Sizeof(Calc(nil)),
 		TypeId: e.TypeId(CalcTypeCalc),
 	},
 	CalcTypeExpr: {
@@ -423,8 +428,9 @@ var calcEngine = e.New(e.TypeMap{
 			}
 			return e.Ptr(&d)
 		},
-		SizeOf: unsafe.Sizeof(Expr(nil)),
 		Kind:   e.KindInterface,
+		Name:   "Expr",
+		SizeOf: unsafe.Sizeof(Expr(nil)),
 		TypeId: e.TypeId(CalcTypeExpr),
 	},
 
@@ -498,24 +504,9 @@ const (
 	CalcTypeScalarPtr
 )
 
-var calcTypeIdNames = [...]string{
-	"<NIL>",
-	"BinaryOp",
-	"*BinaryOp",
-	"Calc",
-	"Calculation",
-	"*Calculation",
-	"Expr",
-	"[]Expr",
-	"Func",
-	"*Func",
-	"Scalar",
-	"*Scalar",
-}
-
 // String is for debugging use only.
 func (t CalcTypeId) String() string {
-	return calcTypeIdNames[t]
+	return calcEngine.Stringify(e.TypeId(t))
 }
 
 type Calc interface {
