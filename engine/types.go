@@ -43,15 +43,15 @@ const (
 	KindStruct
 )
 
-// Ptr is an alias for unsafe.Pointer.
-type Ptr unsafe.Pointer
+// ActionFn describes a simple callback function.
+type ActionFn func() error
 
 // FacadeFn is a generated function type that depends on the visitable
 // interface.
 type FacadeFn interface{}
 
-// ActionFn describes a simple callback function.
-type ActionFn func() error
+// Ptr is an alias for unsafe.Pointer.
+type Ptr unsafe.Pointer
 
 // TypeData contains metadata and accessors that are produced by the
 // code generator.
@@ -62,7 +62,7 @@ type TypeData struct {
 	Elem TypeId
 	// Facade will call a user-provided facade function in a
 	// type-safe fashion.
-	Facade func(ContextImpl, FacadeFn, Ptr) DecisionImpl
+	Facade func(Context, FacadeFn, Ptr) Decision
 	// Fields holds information about the fields of a struct.
 	Fields []FieldInfo
 	// IntfType accepts a pointer to an interface type and returns a
@@ -107,24 +107,83 @@ type FieldInfo struct {
 	targetData *TypeData
 }
 
-// ContextImpl is provided to generated, type-safe facades.
-type ContextImpl struct{}
+// Context is provided to generated, type-safe facades.
+type Context struct{}
 
-// DecisionImpl is wrapped by generated, type-safe facades.
-type DecisionImpl struct {
-	Actions         []ActionImpl
-	Error           error
-	Halt            bool
-	Intercept       FacadeFn
-	Post            FacadeFn
-	Replacement     Ptr
-	ReplacementType TypeId
-	Skip            bool
+// ActionCall constructs an action which will invoke the function.
+func (Context) ActionCall(fn ActionFn) Action {
+	return Action{call: fn}
 }
 
-// ActionImpl allows user-defined actions to be inserted into the
+// ActionVisit constructs an action which will visit the given value.
+func (Context) ActionVisit(td *TypeData, value Ptr) Action {
+	return Action{typeData: td, value: value, valueType: td.TypeId}
+}
+
+// ActionVisitTypeId constructs an action which will visit the given value.
+func (Context) ActionVisitTypeId(id TypeId, value Ptr) Action {
+	return Action{value: value, valueType: id}
+}
+
+// Actions is for use by generated code only.
+func (Context) Actions(actions []Action) Decision {
+	return Decision{actions: actions}
+}
+
+// Continue is for use by generated code only.
+func (Context) Continue() Decision {
+	return Decision{}
+}
+
+// Error is for use by generated code only.
+func (Context) Error(err error) Decision {
+	return Decision{error: err}
+}
+
+// Halt is for use by generated code only.
+func (Context) Halt() Decision {
+	return Decision{halt: true}
+}
+
+// Skip is for use by generated code only.
+func (Context) Skip() Decision {
+	return Decision{skip: true}
+}
+
+// Decision is wrapped by generated, type-safe facades.
+type Decision struct {
+	actions         []Action
+	error           error
+	halt            bool
+	intercept       FacadeFn
+	post            FacadeFn
+	replacement     Ptr
+	replacementType TypeId
+	skip            bool
+}
+
+// Intercept is for use by generated code only.
+func (d Decision) Intercept(fn FacadeFn) Decision {
+	d.intercept = fn
+	return d
+}
+
+// Post is for use by generated code only.
+func (d Decision) Post(fn FacadeFn) Decision {
+	d.post = fn
+	return d
+}
+
+// Replace is for use by generated code only.
+func (d Decision) Replace(id TypeId, x Ptr) Decision {
+	d.replacement = x
+	d.replacementType = id
+	return d
+}
+
+// Action allows user-defined actions to be inserted into the
 // visitation flow.
-type ActionImpl struct {
+type Action struct {
 	call      ActionFn
 	dirty     bool
 	post      FacadeFn
@@ -133,37 +192,22 @@ type ActionImpl struct {
 	valueType TypeId
 }
 
-// ActionCall constructs an action which will invoke the function.
-func ActionCall(fn ActionFn) ActionImpl {
-	return ActionImpl{call: fn}
-}
-
-// ActionVisit constructs an action which will visit the given value.
-func ActionVisit(td *TypeData, value Ptr) ActionImpl {
-	return ActionImpl{typeData: td, value: value, valueType: td.TypeId}
-}
-
-// ActionVisitTypeId constructs an action which will visit the given value.
-func ActionVisitTypeId(id TypeId, value Ptr) ActionImpl {
-	return ActionImpl{value: value, valueType: id}
-}
-
 // apply updates the action with information from a decision.
-func (a *ActionImpl) apply(e *Engine, d DecisionImpl) error {
-	if d.Error != nil {
-		return d.Error
+func (a *Action) apply(e *Engine, d Decision) error {
+	if d.error != nil {
+		return d.error
 	}
-	if d.Post != nil {
-		a.post = d.Post
+	if d.post != nil {
+		a.post = d.post
 	}
-	if d.Replacement != nil {
+	if d.replacement != nil {
 		curType := a.typeData
 		// The user can only change the type of the object if it's being
 		// assigned to an interface slot. Even then, we'll want to
 		// check the assignability.
-		if curType.TypeId != d.ReplacementType {
+		if curType.TypeId != d.replacementType {
 			if curType.Kind == KindInterface {
-				nextTypeId := curType.IntfType(d.Replacement)
+				nextTypeId := curType.IntfType(d.replacement)
 				if nextTypeId == 0 {
 					return fmt.Errorf(
 						"type %d is unknown or not assignable to %d", nextTypeId, curType.TypeId)
@@ -171,11 +215,11 @@ func (a *ActionImpl) apply(e *Engine, d DecisionImpl) error {
 				curType = e.typeData(nextTypeId)
 			} else {
 				return fmt.Errorf(
-					"cannot change type of %d to %d", curType.TypeId, d.ReplacementType)
+					"cannot change type of %d to %d", curType.TypeId, d.replacementType)
 			}
 		}
 		a.dirty = true
-		a.value = d.Replacement
+		a.value = d.replacement
 	}
 	return nil
 }

@@ -53,26 +53,7 @@ type CalcWalkerFn func(ctx CalcContext, x Calc) CalcDecision
 // CalcContext is provided to CalcWalkerFn and acts as a factory
 // for constructing CalcDecision instances.
 type CalcContext struct {
-	impl e.ContextImpl
-}
-
-// Continue returns the zero-value of CalcDecision. It exists only
-// for cases where it improves the readability of code.
-func (c *CalcContext) Continue() CalcDecision {
-	return CalcDecision{}
-}
-
-// Error returns a CalcDecision which will cause the given error
-// to be returned from the Walk() function. Post-visit functions
-// will not be called.
-func (c *CalcContext) Error(err error) CalcDecision {
-	return CalcDecision{impl: e.DecisionImpl{Error: err}}
-}
-
-// Halt will end a visitation early and return from the Walk() function.
-// Any registered post-visit functions will be called.
-func (c *CalcContext) Halt() CalcDecision {
-	return CalcDecision{impl: e.DecisionImpl{Halt: true}}
+	impl e.Context
 }
 
 // Actions will perform the given actions in place of visiting values
@@ -84,17 +65,36 @@ func (c *CalcContext) Actions(actions ...CalcAction) CalcDecision {
 		return c.Skip()
 	}
 
-	ret := make([]e.ActionImpl, len(actions))
+	ret := make([]e.Action, len(actions))
 	for i, a := range actions {
-		ret[i] = e.ActionImpl(a)
+		ret[i] = e.Action(a)
 	}
 
-	return CalcDecision{impl: e.DecisionImpl{Actions: ret}}
+	return CalcDecision(c.impl.Actions(ret))
+}
+
+// Continue returns the zero-value of CalcDecision. It exists only
+// for cases where it improves the readability of code.
+func (c *CalcContext) Continue() CalcDecision {
+	return CalcDecision(c.impl.Continue())
+}
+
+// Error returns a CalcDecision which will cause the given error
+// to be returned from the Walk() function. Post-visit functions
+// will not be called.
+func (c *CalcContext) Error(err error) CalcDecision {
+	return CalcDecision(c.impl.Error(err))
+}
+
+// Halt will end a visitation early and return from the Walk() function.
+// Any registered post-visit functions will be called.
+func (c *CalcContext) Halt() CalcDecision {
+	return CalcDecision(c.impl.Halt())
 }
 
 // Skip will not traverse the fields of the current object.
 func (c *CalcContext) Skip() CalcDecision {
-	return CalcDecision{impl: e.DecisionImpl{Skip: true}}
+	return CalcDecision(c.impl.Skip())
 }
 
 // CalcDecision is used by CalcWalkerFn to control visitation.
@@ -102,60 +102,61 @@ func (c *CalcContext) Skip() CalcDecision {
 // for CalcDecision instances. In general, the factory methods
 // choose a traversal strategy and additional methods on the
 // CalcDecision can achieve a variety of side-effects.
-type CalcDecision struct {
-	impl e.DecisionImpl
-}
+type CalcDecision e.Decision
 
 // Intercept registers a function to be called immediately before
 // visiting each field or element of the current value.
 func (d CalcDecision) Intercept(fn CalcWalkerFn) CalcDecision {
-	d.impl.Intercept = fn
-	return d
+	return CalcDecision((e.Decision)(d).Intercept(fn))
 }
 
 // Post registers a post-visit function, which will be called after the
 // fields of the current object. The function can make another decision
 // about the current value.
 func (d CalcDecision) Post(fn CalcWalkerFn) CalcDecision {
-	d.impl.Post = fn
-	return d
+	return CalcDecision((e.Decision)(d).Post(fn))
 }
 
 // Replace allows the currently-visited value to be replaced. All
 // parent nodes will be cloned.
 func (d CalcDecision) Replace(x Calc) CalcDecision {
+	return CalcDecision((e.Decision)(d).Replace(calcIdentify(x)))
+}
+
+// calcIdentify is a utility function to map a Calc into
+// its generated type id and a pointer to the data.
+func calcIdentify(x Calc) (typeId e.TypeId, data e.Ptr) {
 	switch t := x.(type) {
 	case *BinaryOp:
-		d.impl.ReplacementType = e.TypeId(CalcTypeBinaryOp)
-		d.impl.Replacement = e.Ptr(t)
+		typeId = e.TypeId(CalcTypeBinaryOp)
+		data = e.Ptr(t)
 	case *Calculation:
-		d.impl.ReplacementType = e.TypeId(CalcTypeCalculation)
-		d.impl.Replacement = e.Ptr(t)
+		typeId = e.TypeId(CalcTypeCalculation)
+		data = e.Ptr(t)
 	case *Func:
-		d.impl.ReplacementType = e.TypeId(CalcTypeFunc)
-		d.impl.Replacement = e.Ptr(t)
+		typeId = e.TypeId(CalcTypeFunc)
+		data = e.Ptr(t)
 	case *Scalar:
-		d.impl.ReplacementType = e.TypeId(CalcTypeScalar)
-		d.impl.Replacement = e.Ptr(t)
+		typeId = e.TypeId(CalcTypeScalar)
+		data = e.Ptr(t)
 	default:
 		panic("unhandled type passed to Replace(). Is the generated code out of date?")
 	}
-	return d
+	return
 }
 
 // CalcAction is used by CalcContext.Actions() and allows users
 // to have fine-grained control over traversal.
-type CalcAction e.ActionImpl
+type CalcAction e.Action
 
 // ActionVisit constructs a CalcAction that will visit the given value.
-func (*CalcContext) ActionVisit(x Calc) CalcAction {
-	d := CalcDecision{}.Replace(x)
-	return CalcAction(e.ActionVisitTypeId(d.impl.ReplacementType, d.impl.Replacement))
+func (c *CalcContext) ActionVisit(x Calc) CalcAction {
+	return CalcAction(c.impl.ActionVisitTypeId(calcIdentify(x)))
 }
 
 // ActionCall constructs a CalcAction that will invoke the given callback.
-func (*CalcContext) ActionCall(fn func() error) CalcAction {
-	return CalcAction(e.ActionCall(fn))
+func (c *CalcContext) ActionCall(fn func() error) CalcAction {
+	return CalcAction(c.impl.ActionCall(fn))
 }
 
 // calcAbstract is a type-safe facade around e.Abstract.
@@ -306,8 +307,8 @@ var calcEngine = e.New(e.TypeMap{
 	// ------ Structs ------
 	CalcTypeBinaryOp: {
 		Copy: func(dest, from e.Ptr) { *(*BinaryOp)(dest) = *(*BinaryOp)(from) },
-		Facade: func(impl e.ContextImpl, fn e.FacadeFn, x e.Ptr) e.DecisionImpl {
-			return fn.(CalcWalkerFn)(CalcContext{impl}, (*BinaryOp)(x)).impl
+		Facade: func(impl e.Context, fn e.FacadeFn, x e.Ptr) e.Decision {
+			return e.Decision(fn.(CalcWalkerFn)(CalcContext{impl}, (*BinaryOp)(x)))
 		},
 		Fields: []e.FieldInfo{
 			{Name: "Left", Offset: unsafe.Offsetof(BinaryOp{}.Left), Target: e.TypeId(CalcTypeExpr)},
@@ -321,8 +322,8 @@ var calcEngine = e.New(e.TypeMap{
 	},
 	CalcTypeCalculation: {
 		Copy: func(dest, from e.Ptr) { *(*Calculation)(dest) = *(*Calculation)(from) },
-		Facade: func(impl e.ContextImpl, fn e.FacadeFn, x e.Ptr) e.DecisionImpl {
-			return fn.(CalcWalkerFn)(CalcContext{impl}, (*Calculation)(x)).impl
+		Facade: func(impl e.Context, fn e.FacadeFn, x e.Ptr) e.Decision {
+			return e.Decision(fn.(CalcWalkerFn)(CalcContext{impl}, (*Calculation)(x)))
 		},
 		Fields: []e.FieldInfo{
 			{Name: "Expr", Offset: unsafe.Offsetof(Calculation{}.Expr), Target: e.TypeId(CalcTypeExpr)},
@@ -335,8 +336,8 @@ var calcEngine = e.New(e.TypeMap{
 	},
 	CalcTypeFunc: {
 		Copy: func(dest, from e.Ptr) { *(*Func)(dest) = *(*Func)(from) },
-		Facade: func(impl e.ContextImpl, fn e.FacadeFn, x e.Ptr) e.DecisionImpl {
-			return fn.(CalcWalkerFn)(CalcContext{impl}, (*Func)(x)).impl
+		Facade: func(impl e.Context, fn e.FacadeFn, x e.Ptr) e.Decision {
+			return e.Decision(fn.(CalcWalkerFn)(CalcContext{impl}, (*Func)(x)))
 		},
 		Fields: []e.FieldInfo{
 			{Name: "Args", Offset: unsafe.Offsetof(Func{}.Args), Target: e.TypeId(CalcTypeExprSlice)},
@@ -349,8 +350,8 @@ var calcEngine = e.New(e.TypeMap{
 	},
 	CalcTypeScalar: {
 		Copy: func(dest, from e.Ptr) { *(*Scalar)(dest) = *(*Scalar)(from) },
-		Facade: func(impl e.ContextImpl, fn e.FacadeFn, x e.Ptr) e.DecisionImpl {
-			return fn.(CalcWalkerFn)(CalcContext{impl}, (*Scalar)(x)).impl
+		Facade: func(impl e.Context, fn e.FacadeFn, x e.Ptr) e.Decision {
+			return e.Decision(fn.(CalcWalkerFn)(CalcContext{impl}, (*Scalar)(x)))
 		},
 		Fields:    []e.FieldInfo{},
 		Name:      "Scalar",

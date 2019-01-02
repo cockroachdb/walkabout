@@ -27,8 +27,8 @@ var {{ $Engine }} = e.New(e.TypeMap {
 // ------ Structs ------
 {{ range $s := Structs $v }}{{ TypeId $s }}: {
 	Copy: func(dest, from e.Ptr) { *(*{{ $s }})(dest) = *(*{{ $s }})(from) },
-	Facade: func(impl e.ContextImpl, fn e.FacadeFn, x e.Ptr) e.DecisionImpl {
-		return fn.({{ $WalkerFn }})({{ $Context }}{impl}, (*{{ $s }})(x)).impl
+	Facade: func(impl e.Context, fn e.FacadeFn, x e.Ptr) e.Decision {
+		return e.Decision(fn.({{ $WalkerFn }})({{ $Context }}{impl}, (*{{ $s }})(x)))
 	},
 	Fields: []e.FieldInfo {
 		{{ range $f := $s.Fields -}}

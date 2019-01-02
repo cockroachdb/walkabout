@@ -38,21 +38,21 @@ type frame struct {
 	// We keep a fixed-size array of slots per frame so that most
 	// visitable objects won't need a heap allocation to store
 	// the intermediate state.
-	Slots [fixedSlotCount]ActionImpl
+	Slots [fixedSlotCount]Action
 	// Large targets (such as slices) will use additional, heap-allocated
 	// memory to store the intermediate state.
-	Overflow []ActionImpl
+	Overflow []Action
 }
 
 // Active retrieves the active slot.
-func (f *frame) Active() (s *ActionImpl, td *TypeData) {
+func (f *frame) Active() (s *Action, td *TypeData) {
 	s = f.Slot(f.Idx)
 	td = s.typeData
 	return
 }
 
 // Slot is used to access a storage slot within the frame.
-func (f *frame) Slot(idx int) *ActionImpl {
+func (f *frame) Slot(idx int) *Action {
 	if idx < fixedSlotCount {
 		return &f.Slots[idx]
 	} else {
@@ -61,7 +61,7 @@ func (f *frame) Slot(idx int) *ActionImpl {
 }
 
 // SetSlot is a helper function to configure a slot.
-func (f *frame) SetSlot(e *Engine, idx int, action ActionImpl) *ActionImpl {
+func (f *frame) SetSlot(e *Engine, idx int, action Action) *Action {
 	ret := f.Slot(idx)
 	*ret = action
 	if ret.typeData == nil {
@@ -71,7 +71,7 @@ func (f *frame) SetSlot(e *Engine, idx int, action ActionImpl) *ActionImpl {
 }
 
 // Zero returns Slot(0).
-func (f *frame) Zero() *ActionImpl {
+func (f *frame) Zero() *Action {
 	return &f.Slots[0]
 }
 
@@ -124,6 +124,7 @@ func (e *Engine) Abstract(typeId TypeId, x Ptr) *Abstract {
 // deeply-nested call stacks. We can also perform cycle-detection at
 // fairly low cost.
 func (e *Engine) Execute(fn FacadeFn, t TypeId, x Ptr) (Ptr, bool, error) {
+	ctx := Context{}
 	stack := make([]frame, 8)
 	stackIdx := 0
 
@@ -138,7 +139,7 @@ func (e *Engine) Execute(fn FacadeFn, t TypeId, x Ptr) (Ptr, bool, error) {
 		entering.Intercept = intercept
 		entering.Idx = 0
 		if slotCount > fixedSlotCount {
-			entering.Overflow = make([]ActionImpl, slotCount-fixedSlotCount)
+			entering.Overflow = make([]Action, slotCount-fixedSlotCount)
 		}
 	}
 
@@ -149,7 +150,7 @@ func (e *Engine) Execute(fn FacadeFn, t TypeId, x Ptr) (Ptr, bool, error) {
 
 	// Bootstrap the stack.
 	stack[0].Count = 1
-	stack[0].SetSlot(e, 0, ActionVisit(e.typeData(t), x))
+	stack[0].SetSlot(e, 0, ctx.ActionVisit(e.typeData(t), x))
 
 	curFrame := &stack[0]
 	curSlot := curFrame.Zero()
@@ -192,35 +193,35 @@ enter:
 			goto unwind
 		}
 		enter(curFrame.Intercept, 1)
-		entering.SetSlot(e, 0, ActionVisit(curType.elemData, ptr))
+		entering.SetSlot(e, 0, ctx.ActionVisit(curType.elemData, ptr))
 
 	case KindStruct:
 		// Allow parent frames to intercept child values.
 		if curFrame.Intercept != nil {
-			d := curType.Facade(ContextImpl{}, curFrame.Intercept, curSlot.value)
+			d := curType.Facade(ctx, curFrame.Intercept, curSlot.value)
 			if err := curSlot.apply(e, d); err != nil {
 				return nil, false, err
 			}
-			if d.Halt {
+			if d.halt {
 				halting = true
 			}
 			// Allow interceptors to replace themselves.
-			if d.Intercept != nil {
-				curFrame.Intercept = d.Intercept
+			if d.intercept != nil {
+				curFrame.Intercept = d.intercept
 			}
 		}
 
 		// Structs are where we call out to user logic via a generated,
 		// type-safe facade. The user code can trigger various flow-control
 		// to happen.
-		d := curType.Facade(ContextImpl{}, fn, curSlot.value)
+		d := curType.Facade(ctx, fn, curSlot.value)
 		// Incorporate replacements, bail on error, etc.
 		if err := curSlot.apply(e, d); err != nil {
 			return nil, false, err
 		}
 		// If the user wants to stop, we'll set the flag and just let the
 		// unwind loop run to completion.
-		if d.Halt {
+		if d.halt {
 			halting = true
 		}
 		// Slices and structs have very similar approaches, we create a new
@@ -228,15 +229,15 @@ enter:
 		// back to the top.
 		fieldCount := len(curType.Fields)
 		switch {
-		case halting, d.Skip:
+		case halting, d.skip:
 			goto unwind
 
-		case d.Actions != nil:
-			if len(d.Actions) == 0 {
+		case d.actions != nil:
+			if len(d.actions) == 0 {
 				goto unwind
 			}
-			enter(d.Intercept, len(d.Actions))
-			for i, a := range d.Actions {
+			enter(d.intercept, len(d.actions))
+			for i, a := range d.actions {
 				entering.SetSlot(e, i, a)
 			}
 
@@ -244,10 +245,10 @@ enter:
 			if fieldCount == 0 {
 				goto unwind
 			}
-			enter(d.Intercept, fieldCount)
+			enter(d.intercept, fieldCount)
 			for i, f := range curType.Fields {
 				fPtr := Ptr(uintptr(curSlot.value) + f.Offset)
-				entering.SetSlot(e, i, ActionVisit(f.targetData, fPtr))
+				entering.SetSlot(e, i, ctx.ActionVisit(f.targetData, fPtr))
 			}
 		}
 
@@ -261,7 +262,7 @@ enter:
 		enter(curFrame.Intercept, header.Len)
 		eltTd := curType.elemData
 		for i, off := 0, uintptr(0); i < header.Len; i, off = i+1, off+eltTd.SizeOf {
-			entering.SetSlot(e, i, ActionVisit(eltTd, Ptr(header.Data+off)))
+			entering.SetSlot(e, i, ctx.ActionVisit(eltTd, Ptr(header.Data+off)))
 		}
 
 	case KindInterface:
@@ -275,7 +276,7 @@ enter:
 			goto unwind
 		}
 		enter(curFrame.Intercept, 1)
-		entering.SetSlot(e, 0, ActionVisit(e.typeData(elem), ptr))
+		entering.SetSlot(e, 0, ctx.ActionVisit(e.typeData(elem), ptr))
 
 	default:
 		panic(fmt.Errorf("unexpected kind: %d", curType.Kind))
@@ -301,11 +302,11 @@ unwind:
 	// Execute any user-provided callback. This logic is pretty much
 	// the same as above, although we don't respect all decision options.
 	if curSlot.post != nil {
-		d := curType.Facade(ContextImpl{}, curSlot.post, curSlot.value)
+		d := curType.Facade(ctx, curSlot.post, curSlot.value)
 		if err := curSlot.apply(e, d); err != nil {
 			return nil, false, err
 		}
-		if d.Halt {
+		if d.halt {
 			halting = true
 		}
 	}

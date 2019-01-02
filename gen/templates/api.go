@@ -22,6 +22,7 @@ func init() {
 {{- $Action := T $v "Action" -}}
 {{- $Context := T $v "Context" -}}
 {{- $Decision := T $v "Decision" -}}
+{{- $identify := t $v "Identify" -}}
 {{- $Root := $v.Root -}}
 {{- $TypeId := T $v "TypeId " -}}
 {{- $WalkerFn := T $v "WalkerFn" -}}
@@ -68,26 +69,7 @@ type {{ $WalkerFn }} func(ctx {{ $Context }}, x {{ $Root }}) {{ $Decision }}
 // {{ $Context }} is provided to {{ $WalkerFn }} and acts as a factory
 // for constructing {{ $Decision }} instances.
 type {{ $Context }} struct {
-	impl e.ContextImpl
-}
-
-// Continue returns the zero-value of {{ $Decision }}. It exists only
-// for cases where it improves the readability of code.
-func (c *{{ $Context }}) Continue() {{ $Decision }} {
-	return {{ $Decision }}{}
-}
-
-// Error returns a {{ $Decision }} which will cause the given error
-// to be returned from the Walk() function. Post-visit functions
-// will not be called.
-func (c *{{ $Context }}) Error(err error) {{ $Decision }} {
-	return {{ $Decision }}{impl: e.DecisionImpl{Error: err}}
-}
-
-// Halt will end a visitation early and return from the Walk() function.
-// Any registered post-visit functions will be called.
-func (c *{{ $Context }}) Halt() {{ $Decision }} {
-	return {{ $Decision }}{impl: e.DecisionImpl{Halt: true}}
+	impl e.Context
 }
 
 // Actions will perform the given actions in place of visiting values
@@ -99,17 +81,37 @@ func (c *{{ $Context }}) Actions(actions ...{{ $Action }}) {{ $Decision }} {
 		return c.Skip()
 	}
 
-	ret := make([]e.ActionImpl, len(actions))
+	ret := make([]e.Action, len(actions))
 	for i, a := range actions {
-		ret[i] = e.ActionImpl(a)
+		ret[i] = e.Action(a)
 	}
 
-	return {{ $Decision }} { impl: e.DecisionImpl { Actions: ret } }
+	return {{ $Decision }}(c.impl.Actions(ret))
 }
+
+// Continue returns the zero-value of {{ $Decision }}. It exists only
+// for cases where it improves the readability of code.
+func (c *{{ $Context }}) Continue() {{ $Decision }} {
+	return {{ $Decision }}(c.impl.Continue())
+}
+
+// Error returns a {{ $Decision }} which will cause the given error
+// to be returned from the Walk() function. Post-visit functions
+// will not be called.
+func (c *{{ $Context }}) Error(err error) {{ $Decision }} {
+	return {{ $Decision }}(c.impl.Error(err))
+}
+
+// Halt will end a visitation early and return from the Walk() function.
+// Any registered post-visit functions will be called.
+func (c *{{ $Context }}) Halt() {{ $Decision }} {
+	return {{ $Decision }}(c.impl.Halt())
+}
+
 
 // Skip will not traverse the fields of the current object.
 func (c *{{ $Context }}) Skip() {{ $Decision }} {
-	return {{ $Decision }}{impl: e.DecisionImpl{Skip: true}}
+	return {{ $Decision }}(c.impl.Skip())
 }
 
 // {{ $Decision }} is used by {{ $WalkerFn }} to control visitation.
@@ -117,56 +119,56 @@ func (c *{{ $Context }}) Skip() {{ $Decision }} {
 // for {{ $Decision }} instances. In general, the factory methods
 // choose a traversal strategy and additional methods on the
 // {{ $Decision }} can achieve a variety of side-effects.
-type {{ $Decision }} struct {
-	impl e.DecisionImpl
-}
+type {{ $Decision }} e.Decision
 
 // Intercept registers a function to be called immediately before 
 // visiting each field or element of the current value.
 func (d {{ $Decision }}) Intercept(fn {{ $WalkerFn }}) {{ $Decision }} {
-	d.impl.Intercept = fn
-	return d
+	return {{ $Decision }}((e.Decision)(d).Intercept(fn))
 }
 
 // Post registers a post-visit function, which will be called after the
 // fields of the current object. The function can make another decision
 // about the current value.
 func (d {{ $Decision }}) Post(fn {{ $WalkerFn }}) {{ $Decision }} {
-	d.impl.Post = fn
-	return d
+	return {{ $Decision }}((e.Decision)(d).Post(fn))
 }
 
 // Replace allows the currently-visited value to be replaced. All
 // parent nodes will be cloned.
 func (d {{ $Decision }}) Replace(x {{ $Root }}) {{ $Decision }} {
+	return {{ $Decision }}((e.Decision)(d).Replace({{ $identify }}(x)))
+}
+
+// {{ $identify }} is a utility function to map a {{ $Root }} into
+// its generated type id and a pointer to the data. 
+func {{ $identify }}(x {{ $Root }}) (typeId e.TypeId, data e.Ptr) {
 	switch t := x.(type) {
 		{{ range $imp := Implementors $Root -}}
 		case {{ $imp.Actual }}:
-			d.impl.ReplacementType = e.TypeId({{ TypeId $imp.Underlying }});
-			{{ if IsPointer $imp.Actual }}d.impl.Replacement = e.Ptr(t);
-			{{ else }}d.impl.Replacement = e.Ptr(&t);
+			typeId = e.TypeId({{ TypeId $imp.Underlying }});
+			{{ if IsPointer $imp.Actual }}data = e.Ptr(t);
+			{{ else }}data = e.Ptr(&t);
 			{{ end }}
 		{{- end -}}
 		default:
 			panic("unhandled type passed to Replace(). Is the generated code out of date?")
 	}
-	return d
+	return
 }
-
 
 // {{ $Action }} is used by {{ $Context }}.Actions() and allows users
 // to have fine-grained control over traversal.
-type {{ $Action }} e.ActionImpl
+type {{ $Action }} e.Action
 
 // ActionVisit constructs a {{ $Action }} that will visit the given value.
-func (*{{ $Context }}) ActionVisit(x {{ $Root }}) {{ $Action }} {
-	d := {{ $Decision }}{}.Replace(x)
-	return {{ $Action }} (e.ActionVisitTypeId(d.impl.ReplacementType, d.impl.Replacement))
+func (c *{{ $Context }}) ActionVisit(x {{ $Root }}) {{ $Action }} {
+	return {{ $Action }} (c.impl.ActionVisitTypeId({{ $identify }}(x)))
 }
 
 // ActionCall constructs a {{ $Action }} that will invoke the given callback.
-func (*{{ $Context }}) ActionCall(fn func()error) {{ $Action }} {
-	return {{ $Action }} (e.ActionCall(fn))
+func (c *{{ $Context }}) ActionCall(fn func()error) {{ $Action }} {
+	return {{ $Action }} (c.impl.ActionCall(fn))
 }
 `
 }

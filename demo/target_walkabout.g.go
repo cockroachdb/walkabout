@@ -52,26 +52,7 @@ type TargetWalkerFn func(ctx TargetContext, x Target) TargetDecision
 // TargetContext is provided to TargetWalkerFn and acts as a factory
 // for constructing TargetDecision instances.
 type TargetContext struct {
-	impl e.ContextImpl
-}
-
-// Continue returns the zero-value of TargetDecision. It exists only
-// for cases where it improves the readability of code.
-func (c *TargetContext) Continue() TargetDecision {
-	return TargetDecision{}
-}
-
-// Error returns a TargetDecision which will cause the given error
-// to be returned from the Walk() function. Post-visit functions
-// will not be called.
-func (c *TargetContext) Error(err error) TargetDecision {
-	return TargetDecision{impl: e.DecisionImpl{Error: err}}
-}
-
-// Halt will end a visitation early and return from the Walk() function.
-// Any registered post-visit functions will be called.
-func (c *TargetContext) Halt() TargetDecision {
-	return TargetDecision{impl: e.DecisionImpl{Halt: true}}
+	impl e.Context
 }
 
 // Actions will perform the given actions in place of visiting values
@@ -83,17 +64,36 @@ func (c *TargetContext) Actions(actions ...TargetAction) TargetDecision {
 		return c.Skip()
 	}
 
-	ret := make([]e.ActionImpl, len(actions))
+	ret := make([]e.Action, len(actions))
 	for i, a := range actions {
-		ret[i] = e.ActionImpl(a)
+		ret[i] = e.Action(a)
 	}
 
-	return TargetDecision{impl: e.DecisionImpl{Actions: ret}}
+	return TargetDecision(c.impl.Actions(ret))
+}
+
+// Continue returns the zero-value of TargetDecision. It exists only
+// for cases where it improves the readability of code.
+func (c *TargetContext) Continue() TargetDecision {
+	return TargetDecision(c.impl.Continue())
+}
+
+// Error returns a TargetDecision which will cause the given error
+// to be returned from the Walk() function. Post-visit functions
+// will not be called.
+func (c *TargetContext) Error(err error) TargetDecision {
+	return TargetDecision(c.impl.Error(err))
+}
+
+// Halt will end a visitation early and return from the Walk() function.
+// Any registered post-visit functions will be called.
+func (c *TargetContext) Halt() TargetDecision {
+	return TargetDecision(c.impl.Halt())
 }
 
 // Skip will not traverse the fields of the current object.
 func (c *TargetContext) Skip() TargetDecision {
-	return TargetDecision{impl: e.DecisionImpl{Skip: true}}
+	return TargetDecision(c.impl.Skip())
 }
 
 // TargetDecision is used by TargetWalkerFn to control visitation.
@@ -101,60 +101,61 @@ func (c *TargetContext) Skip() TargetDecision {
 // for TargetDecision instances. In general, the factory methods
 // choose a traversal strategy and additional methods on the
 // TargetDecision can achieve a variety of side-effects.
-type TargetDecision struct {
-	impl e.DecisionImpl
-}
+type TargetDecision e.Decision
 
 // Intercept registers a function to be called immediately before
 // visiting each field or element of the current value.
 func (d TargetDecision) Intercept(fn TargetWalkerFn) TargetDecision {
-	d.impl.Intercept = fn
-	return d
+	return TargetDecision((e.Decision)(d).Intercept(fn))
 }
 
 // Post registers a post-visit function, which will be called after the
 // fields of the current object. The function can make another decision
 // about the current value.
 func (d TargetDecision) Post(fn TargetWalkerFn) TargetDecision {
-	d.impl.Post = fn
-	return d
+	return TargetDecision((e.Decision)(d).Post(fn))
 }
 
 // Replace allows the currently-visited value to be replaced. All
 // parent nodes will be cloned.
 func (d TargetDecision) Replace(x Target) TargetDecision {
+	return TargetDecision((e.Decision)(d).Replace(targetIdentify(x)))
+}
+
+// targetIdentify is a utility function to map a Target into
+// its generated type id and a pointer to the data.
+func targetIdentify(x Target) (typeId e.TypeId, data e.Ptr) {
 	switch t := x.(type) {
 	case *ByRefType:
-		d.impl.ReplacementType = e.TypeId(TargetTypeByRefType)
-		d.impl.Replacement = e.Ptr(t)
+		typeId = e.TypeId(TargetTypeByRefType)
+		data = e.Ptr(t)
 	case ByValType:
-		d.impl.ReplacementType = e.TypeId(TargetTypeByValType)
-		d.impl.Replacement = e.Ptr(&t)
+		typeId = e.TypeId(TargetTypeByValType)
+		data = e.Ptr(&t)
 	case *ByValType:
-		d.impl.ReplacementType = e.TypeId(TargetTypeByValType)
-		d.impl.Replacement = e.Ptr(t)
+		typeId = e.TypeId(TargetTypeByValType)
+		data = e.Ptr(t)
 	case *ContainerType:
-		d.impl.ReplacementType = e.TypeId(TargetTypeContainerType)
-		d.impl.Replacement = e.Ptr(t)
+		typeId = e.TypeId(TargetTypeContainerType)
+		data = e.Ptr(t)
 	default:
 		panic("unhandled type passed to Replace(). Is the generated code out of date?")
 	}
-	return d
+	return
 }
 
 // TargetAction is used by TargetContext.Actions() and allows users
 // to have fine-grained control over traversal.
-type TargetAction e.ActionImpl
+type TargetAction e.Action
 
 // ActionVisit constructs a TargetAction that will visit the given value.
-func (*TargetContext) ActionVisit(x Target) TargetAction {
-	d := TargetDecision{}.Replace(x)
-	return TargetAction(e.ActionVisitTypeId(d.impl.ReplacementType, d.impl.Replacement))
+func (c *TargetContext) ActionVisit(x Target) TargetAction {
+	return TargetAction(c.impl.ActionVisitTypeId(targetIdentify(x)))
 }
 
 // ActionCall constructs a TargetAction that will invoke the given callback.
-func (*TargetContext) ActionCall(fn func() error) TargetAction {
-	return TargetAction(e.ActionCall(fn))
+func (c *TargetContext) ActionCall(fn func() error) TargetAction {
+	return TargetAction(c.impl.ActionCall(fn))
 }
 
 // targetAbstract is a type-safe facade around e.Abstract.
@@ -279,8 +280,8 @@ var targetEngine = e.New(e.TypeMap{
 	// ------ Structs ------
 	TargetTypeByRefType: {
 		Copy: func(dest, from e.Ptr) { *(*ByRefType)(dest) = *(*ByRefType)(from) },
-		Facade: func(impl e.ContextImpl, fn e.FacadeFn, x e.Ptr) e.DecisionImpl {
-			return fn.(TargetWalkerFn)(TargetContext{impl}, (*ByRefType)(x)).impl
+		Facade: func(impl e.Context, fn e.FacadeFn, x e.Ptr) e.Decision {
+			return e.Decision(fn.(TargetWalkerFn)(TargetContext{impl}, (*ByRefType)(x)))
 		},
 		Fields:    []e.FieldInfo{},
 		Name:      "ByRefType",
@@ -291,8 +292,8 @@ var targetEngine = e.New(e.TypeMap{
 	},
 	TargetTypeByValType: {
 		Copy: func(dest, from e.Ptr) { *(*ByValType)(dest) = *(*ByValType)(from) },
-		Facade: func(impl e.ContextImpl, fn e.FacadeFn, x e.Ptr) e.DecisionImpl {
-			return fn.(TargetWalkerFn)(TargetContext{impl}, (*ByValType)(x)).impl
+		Facade: func(impl e.Context, fn e.FacadeFn, x e.Ptr) e.Decision {
+			return e.Decision(fn.(TargetWalkerFn)(TargetContext{impl}, (*ByValType)(x)))
 		},
 		Fields:    []e.FieldInfo{},
 		Name:      "ByValType",
@@ -303,8 +304,8 @@ var targetEngine = e.New(e.TypeMap{
 	},
 	TargetTypeContainerType: {
 		Copy: func(dest, from e.Ptr) { *(*ContainerType)(dest) = *(*ContainerType)(from) },
-		Facade: func(impl e.ContextImpl, fn e.FacadeFn, x e.Ptr) e.DecisionImpl {
-			return fn.(TargetWalkerFn)(TargetContext{impl}, (*ContainerType)(x)).impl
+		Facade: func(impl e.Context, fn e.FacadeFn, x e.Ptr) e.Decision {
+			return e.Decision(fn.(TargetWalkerFn)(TargetContext{impl}, (*ContainerType)(x)))
 		},
 		Fields: []e.FieldInfo{
 			{Name: "ByRef", Offset: unsafe.Offsetof(ContainerType{}.ByRef), Target: e.TypeId(TargetTypeByRefType)},
