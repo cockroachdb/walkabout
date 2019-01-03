@@ -16,6 +16,7 @@
 package demo_test
 
 import (
+	"fmt"
 	"runtime"
 	"testing"
 	"time"
@@ -26,38 +27,59 @@ import (
 
 // This is a quick check to keep the core loop allocation-free.
 func TestNoMallocs(t *testing.T) {
-	t.Run("useValuePtrs=true", func(t *testing.T) {
-		a := assert.New(t)
-		x, _ := demo.NewContainer(true)
-		testNoMallocs(a, x)
-	})
-	t.Run("useValuePtrs=false", func(t *testing.T) {
-		a := assert.New(t)
-		x, _ := demo.NewContainer(false)
-		testNoMallocs(a, x)
-	})
+	tcs := []struct {
+		valuePtrs bool
+		topLevel  bool
+	}{
+		{false, false},
+		{false, true},
+		{true, false},
+		{true, true},
+	}
+
+	for _, tc := range tcs {
+		t.Run(fmt.Sprintf("%+v", tc), func(t *testing.T) {
+			a := assert.New(t)
+			x, _ := demo.NewContainer(tc.valuePtrs)
+			testNoMallocs(a, x, tc.topLevel)
+		})
+	}
 }
 
 // BenchmarkNoop should demonstrate that visitations are allocation-free.
 func BenchmarkNoop(b *testing.B) {
-	b.Run("useValuePtrs=true", func(b *testing.B) {
-		x, _ := demo.NewContainer(true)
-		bench(b, x)
-	})
-	b.Run("useValuePtrs=false", func(b *testing.B) {
-		x, _ := demo.NewContainer(false)
-		bench(b, x)
-	})
+	tcs := []struct {
+		valuePtrs bool
+		topLevel  bool
+	}{
+		{false, false},
+		{false, true},
+		{true, false},
+		{true, true},
+	}
+
+	for _, tc := range tcs {
+		b.Run(fmt.Sprintf("%+v", tc), func(b *testing.B) {
+			x, _ := demo.NewContainer(tc.valuePtrs)
+			bench(b, x, tc.topLevel)
+		})
+	}
 }
 
-func bench(b *testing.B, x *demo.ContainerType) {
+func bench(b *testing.B, x *demo.ContainerType, topLevel bool) {
 	b.Helper()
 	b.ReportAllocs()
 	b.ResetTimer()
 	fn := func(ctx demo.TargetContext, x demo.Target) (ret demo.TargetDecision) { return }
 	b.RunParallel(func(pb *testing.PB) {
+		var err error
 		for pb.Next() {
-			if _, _, err := x.WalkTarget(fn); err != nil {
+			if topLevel {
+				_, _, err = demo.WalkTarget(x, fn)
+			} else {
+				_, _, err = x.WalkTarget(fn)
+			}
+			if err != nil {
 				b.Fatal(err)
 			}
 		}
@@ -67,7 +89,7 @@ func bench(b *testing.B, x *demo.ContainerType) {
 // This runs in a loop until we have demonstrated that no mallocs
 // occur, or a timeout occurs. This allows us to account for any
 // other threads that may be running.
-func testNoMallocs(a *assert.Assertions, x *demo.ContainerType) {
+func testNoMallocs(a *assert.Assertions, x *demo.ContainerType, topLevel bool) {
 	stats := runtime.MemStats{}
 	timer := time.NewTimer(1 * time.Second)
 	fn := func(ctx demo.TargetContext, x demo.Target) (ret demo.TargetDecision) { return }
@@ -78,10 +100,15 @@ func testNoMallocs(a *assert.Assertions, x *demo.ContainerType) {
 			a.Fail("timeout")
 			return
 		default:
+			var err error
 			runtime.ReadMemStats(&stats)
 			memBefore := stats.Mallocs
 
-			_, _, err := x.WalkTarget(fn)
+			if topLevel {
+				_, _, err = demo.WalkTarget(x, fn)
+			} else {
+				_, _, err = x.WalkTarget(fn)
+			}
 			runtime.ReadMemStats(&stats)
 
 			a.NoError(err)

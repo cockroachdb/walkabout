@@ -141,7 +141,7 @@ type ContainerType struct {
 
 	// This field is in --reachable mode, since it does implement
 	// our Target interface.
-	OtherImplementor other.Implemetor
+	OtherImplementor other.Implementor
 }
 
 // Value implements the Target interface.

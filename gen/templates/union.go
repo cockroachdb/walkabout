@@ -20,6 +20,7 @@ func init() {
 {{- $v := . -}}
 {{- $Union := $v.Root.Union -}}
 {{- if $Union -}}
+// ------ Union Support -----
 type {{ $Union }} interface {
 	{{ $Union }}Abstract
 	is{{ $Union }}Type()

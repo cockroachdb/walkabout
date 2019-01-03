@@ -157,10 +157,10 @@ func TestInterfaceChange(t *testing.T) {
 	})
 	t.Run("unknown type", func(t *testing.T) {
 		a := assert.New(t)
-		a.PanicsWithValue("unhandled type passed to Replace(). Is the generated code out of date?", func() {
+		a.PanicsWithValue("unhandled value of type: *other.Implementor", func() {
 			d := l.ByValType{}
 			_, _, _ = l.WalkTarget(d, func(ctx l.TargetContext, x l.Target) l.TargetDecision {
-				return ctx.Continue().Replace(&other.Implemetor{})
+				return ctx.Continue().Replace(&other.Implementor{})
 			})
 		})
 	})

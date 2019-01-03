@@ -16,13 +16,13 @@
 package templates
 
 func init() {
-	TemplateSources["50typemap"] = `
+	TemplateSources["75typemap"] = `
 {{- $v := . -}}
 {{- $Context := T $v "Context" -}}
 {{- $Engine := t $v "Engine" -}}
 {{- $TypeId := T $v "TypeId" -}}
 {{- $WalkerFn := T $v "WalkerFn" -}}
-
+// ------ Type Mapping ------
 var {{ $Engine }} = e.New(e.TypeMap {
 // ------ Structs ------
 {{ range $s := Structs $v }}{{ TypeId $s }}: {

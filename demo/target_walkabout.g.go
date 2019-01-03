@@ -5,10 +5,13 @@
 package demo
 
 import (
+	"fmt"
 	"unsafe"
 
 	e "github.com/cockroachdb/walkabout/engine"
 )
+
+// ------ API and public types ------
 
 // TargetTypeId  is a lightweight type token.
 type TargetTypeId e.TypeId
@@ -139,9 +142,34 @@ func targetIdentify(x Target) (typeId e.TypeId, data e.Ptr) {
 		typeId = e.TypeId(TargetTypeContainerType)
 		data = e.Ptr(t)
 	default:
-		panic("unhandled type passed to Replace(). Is the generated code out of date?")
+		// The most probable reason for this is that the generated code
+		// is out of date, or that an implementation of the Target
+		// interface from another package is being passed in.
+		panic(fmt.Sprintf("unhandled value of type: %T", x))
 	}
 	return
+}
+
+// targetWrap is a utility function to reconstitute a Target
+// from an internal type token and a pointer to the value.
+func targetWrap(typeId e.TypeId, x e.Ptr) Target {
+	switch TargetTypeId(typeId) {
+	case TargetTypeByRefType:
+		return (*ByRefType)(x)
+	case TargetTypeByRefTypePtr:
+		return *(**ByRefType)(x)
+	case TargetTypeByValType:
+		return (*ByValType)(x)
+	case TargetTypeByValTypePtr:
+		return *(**ByValType)(x)
+	case TargetTypeContainerType:
+		return (*ContainerType)(x)
+	case TargetTypeContainerTypePtr:
+		return *(**ContainerType)(x)
+	default:
+		// This is likely a code-generation problem.
+		panic(fmt.Sprintf("unhandled TypeId: %d", typeId))
+	}
 }
 
 // TargetAction is used by TargetContext.Actions() and allows users
@@ -157,6 +185,8 @@ func (c *TargetContext) ActionVisit(x Target) TargetAction {
 func (c *TargetContext) ActionCall(fn func() error) TargetAction {
 	return TargetAction(c.impl.ActionCall(fn))
 }
+
+// ------ Type Enhancements ------
 
 // targetAbstract is a type-safe facade around e.Abstract.
 type targetAbstract struct {
@@ -215,7 +245,7 @@ func (*ByRefType) TypeId() TargetTypeId { return TargetTypeByRefType }
 // WalkTarget visits the receiver with the provided callback.
 func (x *ByRefType) WalkTarget(fn TargetWalkerFn) (_ *ByRefType, changed bool, err error) {
 	var y e.Ptr
-	y, changed, err = targetEngine.Execute(fn, e.TypeId(TargetTypeByRefType), e.Ptr(x))
+	_, y, changed, err = targetEngine.Execute(fn, e.TypeId(TargetTypeByRefType), e.Ptr(x), e.TypeId(TargetTypeByRefType))
 	if err != nil {
 		return nil, false, err
 	}
@@ -237,7 +267,7 @@ func (*ByValType) TypeId() TargetTypeId { return TargetTypeByValType }
 // WalkTarget visits the receiver with the provided callback.
 func (x *ByValType) WalkTarget(fn TargetWalkerFn) (_ *ByValType, changed bool, err error) {
 	var y e.Ptr
-	y, changed, err = targetEngine.Execute(fn, e.TypeId(TargetTypeByValType), e.Ptr(x))
+	_, y, changed, err = targetEngine.Execute(fn, e.TypeId(TargetTypeByValType), e.Ptr(x), e.TypeId(TargetTypeByValType))
 	if err != nil {
 		return nil, false, err
 	}
@@ -259,7 +289,7 @@ func (*ContainerType) TypeId() TargetTypeId { return TargetTypeContainerType }
 // WalkTarget visits the receiver with the provided callback.
 func (x *ContainerType) WalkTarget(fn TargetWalkerFn) (_ *ContainerType, changed bool, err error) {
 	var y e.Ptr
-	y, changed, err = targetEngine.Execute(fn, e.TypeId(TargetTypeContainerType), e.Ptr(x))
+	_, y, changed, err = targetEngine.Execute(fn, e.TypeId(TargetTypeContainerType), e.Ptr(x), e.TypeId(TargetTypeContainerType))
 	if err != nil {
 		return nil, false, err
 	}
@@ -268,14 +298,18 @@ func (x *ContainerType) WalkTarget(fn TargetWalkerFn) (_ *ContainerType, changed
 
 // WalkTarget visits the receiver with the provided callback.
 func WalkTarget(x Target, fn TargetWalkerFn) (_ Target, changed bool, err error) {
-	var y e.Ptr
-	y, changed, err = targetEngine.Execute(fn, e.TypeId(TargetTypeTarget), e.Ptr(&x))
+	id, ptr := targetIdentify(x)
+	id, ptr, changed, err = targetEngine.Execute(fn, id, ptr, e.TypeId(TargetTypeTarget))
 	if err != nil {
 		return nil, false, err
 	}
-	return *(*Target)(y), changed, nil
+	if changed {
+		return targetWrap(id, ptr), true, nil
+	}
+	return x, false, nil
 }
 
+// ------ Type Mapping ------
 var targetEngine = e.New(e.TypeMap{
 	// ------ Structs ------
 	TargetTypeByRefType: {

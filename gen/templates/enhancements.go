@@ -21,9 +21,13 @@ func init() {
 {{- $abstract := t $v "Abstract" -}}
 {{- $Abstract := T $v "Abstract" -}}
 {{- $Engine := t $v "Engine" -}}
+{{- $identify := t $v "Identify" -}}
 {{- $Root := $v.Root -}}
 {{- $TypeId := T $v "TypeId" -}}
 {{- $WalkerFn := T $v "WalkerFn" -}}
+{{- $wrap := t $v "Wrap" -}}
+
+// ------ Type Enhancements ------
 
 // {{ $abstract }} is a type-safe facade around e.Abstract.
 type {{ $abstract }} struct {
@@ -74,7 +78,7 @@ func (*{{ $s }}) TypeId() {{ $TypeId }} { return {{ TypeId $s }} }
 // Walk{{ $Root }} visits the receiver with the provided callback. 
 func (x *{{ $s }}) Walk{{ $Root }}(fn {{ $WalkerFn }}) (_ *{{ $s }}, changed bool, err error) {
 	var y e.Ptr
-	y, changed, err = {{ $Engine }}.Execute(fn, e.TypeId({{ TypeId $s }}), e.Ptr(x))
+	_, y, changed, err = {{ $Engine }}.Execute(fn, e.TypeId({{ TypeId $s }}), e.Ptr(x), e.TypeId({{ TypeId $s }}))
 	if err != nil {
 		return nil, false, err
 	}
@@ -84,12 +88,15 @@ func (x *{{ $s }}) Walk{{ $Root }}(fn {{ $WalkerFn }}) (_ *{{ $s }}, changed boo
 
 // Walk{{ $Root }} visits the receiver with the provided callback. 
 func Walk{{ $Root }}(x {{ $Root }}, fn {{ $WalkerFn }}) (_ {{ $Root }}, changed bool, err error) {
-	var y e.Ptr
-	y, changed, err = {{ $Engine }}.Execute(fn, e.TypeId({{ TypeId $Root }}), e.Ptr(&x))
+  id, ptr := {{ $identify }}(x)
+	id, ptr, changed, err = {{ $Engine }}.Execute(fn, id, ptr, e.TypeId({{ TypeId $Root }}))
 	if err != nil {
 		return nil, false, err
 	}
-	return *(*{{ $Root }})(y), changed, nil
+	if changed {
+		return {{ $wrap }}(id, ptr), true, nil
+	}
+	return x, false, nil
 }
 `
 }

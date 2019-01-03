@@ -24,6 +24,9 @@ import (
 	"strings"
 )
 
+// Allows us to pre-allocate working space on the call stack.
+const defaultStackDepth = 8
+
 // See discussion on frame.Slots.
 const fixedSlotCount = 16
 
@@ -120,11 +123,13 @@ func (e *Engine) Abstract(typeId TypeId, x Ptr) *Abstract {
 // Execute drives the visitation process. This is an "unrolled
 // recursive" function that maintains its own stack to avoid
 // deeply-nested call stacks. We can also perform cycle-detection at
-// fairly low cost.
-func (e *Engine) Execute(fn FacadeFn, t TypeId, x Ptr) (Ptr, bool, error) {
+// fairly low cost. Any replacement of the top-level value must be
+// assignable to the given TypeId.
+func (e *Engine) Execute(
+	fn FacadeFn, t TypeId, x Ptr, assignableTo TypeId,
+) (retType TypeId, ret Ptr, changed bool, err error) {
 	ctx := Context{}
-	stack := make([]frame, 8)
-	stackIdx := 0
+	stack := make([]frame, defaultStackDepth)
 
 	// Entering is a temporary pointer to the frame that we might be
 	// entering into next, if the current value is a struct with fields, a
@@ -146,19 +151,27 @@ func (e *Engine) Execute(fn FacadeFn, t TypeId, x Ptr) (Ptr, bool, error) {
 	// its values into the current slot.
 	var returning *frame
 
-	// Bootstrap the stack.
-	stack[0].Count = 1
-	stack[0].SetSlot(e, 0, ctx.ActionVisit(e.typeData(t), x))
+	// Bootstrap the stack. We'll add fake frame at the top of the stack
+	// so that we don't have to special-case the real top-level frame.
+	// We save off the assignability info in this magic frame to allow
+	// callers to the top-level WalkInterface() function to write visitors
+	// which will change the concrete type of the returned value.
+	stack[0].SetSlot(e, 0, ctx.ActionVisit(e.typeData(assignableTo), nil))
+	parentSlot := stack[0].Zero()
 
-	curFrame := &stack[0]
+	const topIdx = 1
+	stackIdx := topIdx
+	stack[topIdx].Count = 1
+	stack[topIdx].SetSlot(e, 0, ctx.ActionVisit(e.typeData(t), x))
+
+	curFrame := &stack[topIdx]
 	curSlot := curFrame.Zero()
 	halting := false
-	parentSlot := curSlot
 
 enter:
 	if curSlot.call != nil {
 		if err := curSlot.call(); err != nil {
-			return nil, false, err
+			return 0, nil, false, err
 		}
 		goto unwind
 	}
@@ -198,7 +211,7 @@ enter:
 		if curFrame.Intercept != nil {
 			d := curSlot.typeData.Facade(ctx, curFrame.Intercept, curSlot.value)
 			if err := curSlot.apply(e, d, parentSlot.typeData); err != nil {
-				return nil, false, err
+				return 0, nil, false, err
 			}
 			if d.halt {
 				halting = true
@@ -215,7 +228,7 @@ enter:
 		d := curSlot.typeData.Facade(ctx, fn, curSlot.value)
 		// Incorporate replacements, bail on error, etc.
 		if err := curSlot.apply(e, d, parentSlot.typeData); err != nil {
-			return nil, false, err
+			return 0, nil, false, err
 		}
 		// If the user wants to stop, we'll set the flag and just let the
 		// unwind loop run to completion.
@@ -302,7 +315,7 @@ unwind:
 	if curSlot.post != nil {
 		d := curSlot.typeData.Facade(ctx, curSlot.post, curSlot.value)
 		if err := curSlot.apply(e, d, parentSlot.typeData); err != nil {
-			return nil, false, err
+			return 0, nil, false, err
 		}
 		if d.halt {
 			halting = true
@@ -366,8 +379,11 @@ nextSlot:
 	// unwind loop until we hit the top frame.
 	if curFrame.Idx == curFrame.Count || halting {
 		// If we've finished the bootstrap frame, we're done.
-		if stackIdx == 0 {
-			return curFrame.Zero().value, curFrame.Zero().dirty, nil
+		if stackIdx == topIdx {
+			// pprof says that this is measurably faster than repeatedly
+			// dereferencing the pointer.
+			z := *curFrame.Zero()
+			return z.typeData.TypeId, z.value, z.dirty, nil
 		}
 		// Save off the current frame so we can copy the data out.
 		returning = curFrame
@@ -375,11 +391,7 @@ nextSlot:
 		stackIdx--
 		curFrame = &stack[stackIdx]
 		curSlot = curFrame.Active()
-		if stackIdx == 0 {
-			parentSlot = curSlot
-		} else {
-			parentSlot = stack[stackIdx-1].Active()
-		}
+		parentSlot = stack[stackIdx-1].Active()
 		// We'll jump back to the unwinding code to finish the slot of the
 		// frame which is now on top.
 		goto unwind

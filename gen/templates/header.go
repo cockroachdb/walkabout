@@ -27,6 +27,7 @@ func init() {
 package {{ Package . }}
 
 import (
+	"fmt"
 	"unsafe"
 
 	e "github.com/cockroachdb/walkabout/engine"

@@ -26,6 +26,8 @@ func init() {
 {{- $Root := $v.Root -}}
 {{- $TypeId := T $v "TypeId " -}}
 {{- $WalkerFn := T $v "WalkerFn" -}}
+{{- $wrap := t $v "Wrap" -}}
+// ------ API and public types ------
 
 // {{ $TypeId }} is a lightweight type token.
 type {{ $TypeId }} e.TypeId
@@ -152,9 +154,28 @@ func {{ $identify }}(x {{ $Root }}) (typeId e.TypeId, data e.Ptr) {
 			{{ end }}
 		{{- end -}}
 		default:
-			panic("unhandled type passed to Replace(). Is the generated code out of date?")
+			// The most probable reason for this is that the generated code
+			// is out of date, or that an implementation of the {{ $Root }}
+			// interface from another package is being passed in.
+			panic(fmt.Sprintf("unhandled value of type: %T", x))
 	}
 	return
+}
+
+// {{ $wrap }} is a utility function to reconstitute a {{ $Root }}
+// from an internal type token and a pointer to the value.
+func {{ $wrap }}(typeId e.TypeId, x e.Ptr) {{ $Root }} {
+	switch {{ $TypeId }}(typeId) {
+	{{ range $imp := Implementors $Root -}}
+		{{- if IsPointer $imp.Actual -}}
+			case {{ TypeId $imp.Actual.Elem }}: return (*{{ $imp.Actual.Elem }})(x);
+			case {{ TypeId $imp.Actual }}: return *(*{{ $imp.Actual }})(x);
+		{{- end -}}
+	{{- end }}
+	default:
+		// This is likely a code-generation problem.
+		panic(fmt.Sprintf("unhandled TypeId: %d", typeId))
+	}
 }
 
 // {{ $Action }} is used by {{ $Context }}.Actions() and allows users

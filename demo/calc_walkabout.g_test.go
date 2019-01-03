@@ -5,10 +5,13 @@
 package demo
 
 import (
+	"fmt"
 	"unsafe"
 
 	e "github.com/cockroachdb/walkabout/engine"
 )
+
+// ------ API and public types ------
 
 // CalcTypeId  is a lightweight type token.
 type CalcTypeId e.TypeId
@@ -140,9 +143,38 @@ func calcIdentify(x Calc) (typeId e.TypeId, data e.Ptr) {
 		typeId = e.TypeId(CalcTypeScalar)
 		data = e.Ptr(t)
 	default:
-		panic("unhandled type passed to Replace(). Is the generated code out of date?")
+		// The most probable reason for this is that the generated code
+		// is out of date, or that an implementation of the Calc
+		// interface from another package is being passed in.
+		panic(fmt.Sprintf("unhandled value of type: %T", x))
 	}
 	return
+}
+
+// calcWrap is a utility function to reconstitute a Calc
+// from an internal type token and a pointer to the value.
+func calcWrap(typeId e.TypeId, x e.Ptr) Calc {
+	switch CalcTypeId(typeId) {
+	case CalcTypeBinaryOp:
+		return (*BinaryOp)(x)
+	case CalcTypeBinaryOpPtr:
+		return *(**BinaryOp)(x)
+	case CalcTypeCalculation:
+		return (*Calculation)(x)
+	case CalcTypeCalculationPtr:
+		return *(**Calculation)(x)
+	case CalcTypeFunc:
+		return (*Func)(x)
+	case CalcTypeFuncPtr:
+		return *(**Func)(x)
+	case CalcTypeScalar:
+		return (*Scalar)(x)
+	case CalcTypeScalarPtr:
+		return *(**Scalar)(x)
+	default:
+		// This is likely a code-generation problem.
+		panic(fmt.Sprintf("unhandled TypeId: %d", typeId))
+	}
 }
 
 // CalcAction is used by CalcContext.Actions() and allows users
@@ -158,6 +190,8 @@ func (c *CalcContext) ActionVisit(x Calc) CalcAction {
 func (c *CalcContext) ActionCall(fn func() error) CalcAction {
 	return CalcAction(c.impl.ActionCall(fn))
 }
+
+// ------ Type Enhancements ------
 
 // calcAbstract is a type-safe facade around e.Abstract.
 type calcAbstract struct {
@@ -220,7 +254,7 @@ func (*BinaryOp) TypeId() CalcTypeId { return CalcTypeBinaryOp }
 // WalkCalc visits the receiver with the provided callback.
 func (x *BinaryOp) WalkCalc(fn CalcWalkerFn) (_ *BinaryOp, changed bool, err error) {
 	var y e.Ptr
-	y, changed, err = calcEngine.Execute(fn, e.TypeId(CalcTypeBinaryOp), e.Ptr(x))
+	_, y, changed, err = calcEngine.Execute(fn, e.TypeId(CalcTypeBinaryOp), e.Ptr(x), e.TypeId(CalcTypeBinaryOp))
 	if err != nil {
 		return nil, false, err
 	}
@@ -242,7 +276,7 @@ func (*Calculation) TypeId() CalcTypeId { return CalcTypeCalculation }
 // WalkCalc visits the receiver with the provided callback.
 func (x *Calculation) WalkCalc(fn CalcWalkerFn) (_ *Calculation, changed bool, err error) {
 	var y e.Ptr
-	y, changed, err = calcEngine.Execute(fn, e.TypeId(CalcTypeCalculation), e.Ptr(x))
+	_, y, changed, err = calcEngine.Execute(fn, e.TypeId(CalcTypeCalculation), e.Ptr(x), e.TypeId(CalcTypeCalculation))
 	if err != nil {
 		return nil, false, err
 	}
@@ -264,7 +298,7 @@ func (*Func) TypeId() CalcTypeId { return CalcTypeFunc }
 // WalkCalc visits the receiver with the provided callback.
 func (x *Func) WalkCalc(fn CalcWalkerFn) (_ *Func, changed bool, err error) {
 	var y e.Ptr
-	y, changed, err = calcEngine.Execute(fn, e.TypeId(CalcTypeFunc), e.Ptr(x))
+	_, y, changed, err = calcEngine.Execute(fn, e.TypeId(CalcTypeFunc), e.Ptr(x), e.TypeId(CalcTypeFunc))
 	if err != nil {
 		return nil, false, err
 	}
@@ -286,7 +320,7 @@ func (*Scalar) TypeId() CalcTypeId { return CalcTypeScalar }
 // WalkCalc visits the receiver with the provided callback.
 func (x *Scalar) WalkCalc(fn CalcWalkerFn) (_ *Scalar, changed bool, err error) {
 	var y e.Ptr
-	y, changed, err = calcEngine.Execute(fn, e.TypeId(CalcTypeScalar), e.Ptr(x))
+	_, y, changed, err = calcEngine.Execute(fn, e.TypeId(CalcTypeScalar), e.Ptr(x), e.TypeId(CalcTypeScalar))
 	if err != nil {
 		return nil, false, err
 	}
@@ -295,14 +329,34 @@ func (x *Scalar) WalkCalc(fn CalcWalkerFn) (_ *Scalar, changed bool, err error) 
 
 // WalkCalc visits the receiver with the provided callback.
 func WalkCalc(x Calc, fn CalcWalkerFn) (_ Calc, changed bool, err error) {
-	var y e.Ptr
-	y, changed, err = calcEngine.Execute(fn, e.TypeId(CalcTypeCalc), e.Ptr(&x))
+	id, ptr := calcIdentify(x)
+	id, ptr, changed, err = calcEngine.Execute(fn, id, ptr, e.TypeId(CalcTypeCalc))
 	if err != nil {
 		return nil, false, err
 	}
-	return *(*Calc)(y), changed, nil
+	if changed {
+		return calcWrap(id, ptr), true, nil
+	}
+	return x, false, nil
 }
 
+// ------ Union Support -----
+type Calc interface {
+	CalcAbstract
+	isCalcType()
+}
+
+var (
+	_ Calc = &BinaryOp{}
+	_ Calc = &Calculation{}
+	_ Calc = &Func{}
+	_ Calc = &Scalar{}
+)
+
+func (*BinaryOp) isCalcType()    {}
+func (*Calculation) isCalcType() {}
+func (*Func) isCalcType()        {}
+func (*Scalar) isCalcType()      {} // ------ Type Mapping ------
 var calcEngine = e.New(e.TypeMap{
 	// ------ Structs ------
 	CalcTypeBinaryOp: {
@@ -527,20 +581,3 @@ const (
 func (t CalcTypeId) String() string {
 	return calcEngine.Stringify(e.TypeId(t))
 }
-
-type Calc interface {
-	CalcAbstract
-	isCalcType()
-}
-
-var (
-	_ Calc = &BinaryOp{}
-	_ Calc = &Calculation{}
-	_ Calc = &Func{}
-	_ Calc = &Scalar{}
-)
-
-func (*BinaryOp) isCalcType()    {}
-func (*Calculation) isCalcType() {}
-func (*Func) isCalcType()        {}
-func (*Scalar) isCalcType()      {}

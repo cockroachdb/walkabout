@@ -24,11 +24,11 @@ package other
 type Reachable struct{}
 
 // This type is in another package, so it's not eligible for inclusion.
-type Implemetor struct {
+type Implementor struct {
 	val string
 }
 
 // Value implements the Target interface.
-func (i Implemetor) Value() string {
+func (i Implementor) Value() string {
 	return i.val
 }
