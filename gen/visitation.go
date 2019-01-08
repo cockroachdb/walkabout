@@ -18,6 +18,9 @@ package gen
 import (
 	"fmt"
 	"go/types"
+	"strings"
+
+	"github.com/pkg/errors"
 )
 
 // TypeId is a constant string to be emitted in the generated code.
@@ -43,7 +46,7 @@ type visitation struct {
 	// for inclusion.
 	includeReachable bool
 	inTest           bool
-	pkg              *types.Package
+	packagePath      string
 	// The root visitable interface.
 	Root namedInterfaceType
 	// types collects all referenced types, indexed by their type id.
@@ -51,20 +54,77 @@ type visitation struct {
 	SourceTypes map[SourceName]visitableType
 }
 
+func (v *visitation) findSeedTypes(scopes []*types.Scope) error {
+	g := v.gen
+
+	// Resolve all of the specified type names to an interface or struct.
+name:
+	for _, name := range g.typeNames {
+		for _, scope := range scopes {
+			obj := scope.Lookup(name)
+			if obj == nil {
+				continue
+			}
+			if named, ok := obj.Type().(*types.Named); ok {
+				var filter visitableType
+				switch u := named.Underlying().(type) {
+				case *types.Interface:
+					// The default case, we expect to see an interface type.
+					intf := namedInterfaceType{
+						Named:     named,
+						Interface: u,
+						v:         v,
+					}
+					if g.union == "" && len(g.typeNames) == 1 {
+						v.Root = intf
+					}
+					filter = intf
+				case *types.Struct:
+					// If we're generating the visitable interface with --union,
+					// we'll allow structs to be specified, too.
+					if g.union == "" {
+						return errors.Errorf("structs may only be used with --union")
+					}
+					filter = namedStruct{
+						Named:  named,
+						Struct: u,
+						v:      v,
+					}
+				default:
+					return errors.Errorf("%q is neither a struct nor an interface", name)
+				}
+
+				v.filters = append(v.filters, filter)
+
+				// If the type refers to anything defined in a test file, generate
+				// into a _test.go file as well.
+				if obj.Pos().IsValid() {
+					position := g.fileSet.Position(obj.Pos())
+					if strings.HasSuffix(position.Filename, "_test.go") {
+						v.inTest = true
+					}
+				}
+				continue name
+			}
+		}
+		return errors.Errorf("unknown type %q", name)
+	}
+	return nil
+}
+
 // populateGeneratedTypes finds top-level types that we will generate
 // additional methods for.
-func (v *visitation) populateGeneratedTypes() {
-	g := v.gen
-	scope := g.pkg.Scope()
-
+func (v *visitation) populateGeneratedTypes(scopes []*types.Scope) {
 	// Bootstrap our type info by looking for named struct and interface
 	// types in the package.
-	for _, name := range scope.Names() {
-		obj := scope.Lookup(name)
-		if named, ok := obj.Type().(*types.Named); ok {
-			switch named.Underlying().(type) {
-			case *types.Struct, *types.Interface:
-				v.visitableType(obj.Type(), false)
+	for _, scope := range scopes {
+		for _, name := range scope.Names() {
+			obj := scope.Lookup(name)
+			if named, ok := obj.Type().(*types.Named); ok {
+				switch named.Underlying().(type) {
+				case *types.Struct, *types.Interface:
+					v.visitableType(obj.Type(), false)
+				}
 			}
 		}
 	}
@@ -110,10 +170,11 @@ func (v *visitation) typeId(i visitableType) TypeId {
 func (v *visitation) visitableType(typ types.Type, isReachable bool) (visitableType, bool) {
 	switch t := typ.(type) {
 	case *types.Named:
-		// Ignore un-exported types.
-		if !t.Obj().Exported() {
+		// Ignore un-exported types or those from other packages.
+		if !t.Obj().Exported() || t.Obj().Pkg().Path() != v.packagePath {
 			return nil, false
 		}
+
 		sourceName := SourceName(t.Obj().Name())
 		if ret, ok := v.SourceTypes[sourceName]; ok {
 			return ret, true
@@ -121,7 +182,7 @@ func (v *visitation) visitableType(typ types.Type, isReachable bool) (visitableT
 
 		switch u := t.Underlying().(type) {
 		case *types.Struct:
-			ok := v.includeReachable && isReachable && t.Obj().Pkg() == v.pkg
+			ok := v.includeReachable && isReachable
 
 			if !ok {
 			outer:
@@ -155,7 +216,7 @@ func (v *visitation) visitableType(typ types.Type, isReachable bool) (visitableT
 			}
 
 		case *types.Interface:
-			ok := v.includeReachable && isReachable && t.Obj().Pkg() == v.pkg
+			ok := v.includeReachable && isReachable
 			if !ok {
 				for _, filter := range v.filters {
 					if filterIntf, isIntf := filter.(namedInterfaceType); isIntf {
@@ -180,7 +241,7 @@ func (v *visitation) visitableType(typ types.Type, isReachable bool) (visitableT
 				// by the interface.
 				if isReachable && v.includeReachable {
 					v.filters = append(v.filters, ret)
-					v.populateGeneratedTypes()
+					v.populateGeneratedTypes([]*types.Scope{t.Obj().Parent()})
 				}
 
 				return ret, true

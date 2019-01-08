@@ -16,25 +16,17 @@
 package gen
 
 import (
-	"go/ast"
-	"go/build"
-	"go/importer"
-	"go/parser"
 	"go/token"
 	"go/types"
 	"io"
 	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/pkg/errors"
+	"golang.org/x/tools/go/packages"
 )
 
 type config struct {
 	dir string
-	// By default, we don't fully type-check the input. This can be
-	// enabled for testing to validate generated code.
-	fullCheck bool
 	// If present, overrides the output file name.
 	outFile string
 	// Include all types reachable from visitable types that implement
@@ -53,13 +45,9 @@ type config struct {
 type generation struct {
 	config
 
-	astFiles []*ast.File
 	// Allows additional files to be added to the parse phase for testing.
 	extraTestSource map[string][]byte
-	fileSet         *token.FileSet
-	pkg             *types.Package
-	// The sources being considered.
-	source *build.Package
+	fileSet         token.FileSet
 	// Stores the executed visitation for testing.
 	visitation  *visitation
 	writeCloser func(name string) (io.WriteCloser, error)
@@ -75,8 +63,7 @@ func newGeneration(cfg config) (*generation, error) {
 		return nil, errors.New("--reachable can only be used with --union")
 	}
 	return &generation{
-		fileSet: token.NewFileSet(),
-		config:  cfg,
+		config: cfg,
 		writeCloser: func(name string) (io.WriteCloser, error) {
 			if name == "-" {
 				return os.Stdout, nil
@@ -89,45 +76,27 @@ func newGeneration(cfg config) (*generation, error) {
 
 // Execute runs the complete code-generation cycle.
 func (g *generation) Execute() error {
-	// Scan the input directory for source files.
-	if err := g.importSources(); err != nil {
-		return err
-	}
-
-	// Assemble source files, which may include files injected
-	// when testing.
-	files := append(g.source.GoFiles, g.source.TestGoFiles...)
-	if len(g.extraTestSource) > 0 {
-		// Mix in extra sources.
-		if err := g.addSource(g.extraTestSource); err != nil {
-			return err
-		}
-		// Filter our input sources if an input file is being overridden.
-		filtered := files[:0]
-		for _, file := range files {
-			if g.extraTestSource[file] == nil {
-				filtered = append(filtered, file)
-			}
-		}
-		files = filtered
-	}
-
-	if err := g.parseFiles(files); err != nil {
-		return err
-	}
-	if err := g.typeCheck(); err != nil {
+	// This will return multiple packages.Package if we're also loading
+	// test files. Note that the error here is whether or not the Load()
+	// was able to perform its work. The underlying source may still have
+	// syntax/type errors, but we ignore that in case of a "make clean"
+	// situation, where we're likely to see code that depends on generated
+	// code.
+	pkgs, err := packages.Load(g.packageConfig(), ".")
+	if err != nil {
 		return err
 	}
 
 	v := &visitation{
 		gen:              g,
 		includeReachable: g.config.reachable,
-		pkg:              g.pkg,
+		packagePath:      pkgs[0].PkgPath,
 		Types:            make(map[TypeId]visitableType),
 		SourceTypes:      make(map[SourceName]visitableType),
 	}
 	g.visitation = v
 
+	// Synthesize a union interface, if configured.
 	if g.config.union != "" {
 		v.Root = namedInterfaceType{
 			Union: g.union,
@@ -135,126 +104,24 @@ func (g *generation) Execute() error {
 		}
 	}
 
-	// Resolve all of the specified type names to an interface or struct.
-	for _, name := range g.typeNames {
-		obj := v.pkg.Scope().Lookup(name)
-		if obj == nil {
-			return errors.Errorf("unknown type %q", name)
-		}
-		if named, ok := obj.Type().(*types.Named); ok {
-			var filter visitableType
-			switch u := named.Underlying().(type) {
-			case *types.Interface:
-				// The default case, we expect to see an interface type.
-				intf := namedInterfaceType{
-					Named:     named,
-					Interface: u,
-					v:         v,
-				}
-				if g.union == "" && len(g.typeNames) == 1 {
-					v.Root = intf
-				}
-				filter = intf
-			case *types.Struct:
-				// If we're generating the visitable interface with --union,
-				// we'll allow structs to be specified, too.
-				if g.union == "" {
-					return errors.Errorf("structs may only be used with --union")
-				}
-				filter = namedStruct{
-					Named:  named,
-					Struct: u,
-					v:      v,
-				}
-			default:
-				return errors.Errorf("%q is neither a struct nor an interface", name)
-			}
-
-			v.filters = append(v.filters, filter)
-
-			// If the type refers to anything defined in a test file, generate
-			// into a _test.go file as well.
-			if obj.Pos().IsValid() {
-				position := g.fileSet.Position(obj.Pos())
-				if strings.HasSuffix(position.Filename, "_test.go") {
-					v.inTest = true
-				}
-			}
-		}
+	scopes := make([]*types.Scope, len(pkgs))
+	for idx, pkg := range pkgs {
+		scopes[idx] = pkg.Types.Scope()
 	}
 
-	v.populateGeneratedTypes()
-
+	if err := v.findSeedTypes(scopes); err != nil {
+		return err
+	}
+	v.populateGeneratedTypes(scopes)
 	return v.generateAPI()
 }
 
-func (g *generation) addSource(source map[string][]byte) error {
-	for name, data := range source {
-		astFile, err := parser.ParseFile(g.fileSet, name, string(data), 0 /* Mode */)
-		if err != nil {
-			return err
-		}
-		g.astFiles = append(g.astFiles, astFile)
+func (g *generation) packageConfig() *packages.Config {
+	return &packages.Config{
+		Dir:     g.dir,
+		Fset:    &g.fileSet,
+		Mode:    packages.LoadTypes,
+		Overlay: g.extraTestSource,
+		Tests:   true,
 	}
-	return nil
-}
-
-// importSources finds files on disk that we want to read. The generated
-// code has a build tag added so that we can ignore it in this phase.
-// We don't want out-of-sync generated code to break regeneration.
-func (g *generation) importSources() error {
-	ctx := build.Default
-	// Don't re-import code that we've generated.
-	ctx.BuildTags = append(ctx.BuildTags, "walkaboutAnalysis")
-	if g.extraTestSource != nil {
-		ctx.BuildTags = append(ctx.BuildTags, "generationTest")
-	}
-
-	pkg, err := ctx.ImportDir(g.dir, 0)
-	if err != nil {
-		return err
-	}
-	g.source = pkg
-	return nil
-}
-
-// parseFiles runs the golang parser to produce AST elements.
-func (g *generation) parseFiles(files []string) error {
-	for _, path := range files {
-		astFile, err := parser.ParseFile(g.fileSet, filepath.Join(g.dir, path), nil, 0 /* Mode */)
-		if err != nil {
-			return err
-		}
-		g.astFiles = append(g.astFiles, astFile)
-	}
-	return nil
-}
-
-// typeCheck will run the go type checker over the parsed imports. This
-// method is lenient, unless g.fullCheck has been set. The leniency
-// helps in cases where code in the package that we're parsing depends
-// on code that may not yet be generated (e.g. make clean).
-func (g *generation) typeCheck() error {
-	// We prefer to use the already-compiled and cached information
-	// available from the go compiler. We switch to source-based mode
-	// when we're injecting generated sources as part of the test suite.
-	importerName := "gc"
-	if g.fullCheck {
-		importerName = "source"
-	}
-	cfg := &types.Config{
-		Importer: importer.For(importerName, nil),
-	}
-	if !g.fullCheck {
-		cfg.DisableUnusedImportCheck = true
-		// Just drain errors from the checker.
-		cfg.Error = func(err error) {}
-		cfg.IgnoreFuncBodies = true
-	}
-	var err error
-	g.pkg, err = cfg.Check(g.dir, g.fileSet, g.astFiles, nil /* info */)
-	if err != nil && g.fullCheck {
-		return err
-	}
-	return nil
 }

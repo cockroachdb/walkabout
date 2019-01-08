@@ -28,12 +28,12 @@ import (
 func Example_abstract() {
 	data, _ := demo.NewContainer(true)
 
-	for i := 0; i < data.NumChildren(); i++ {
-		child := data.ChildAt(i)
+	for i := 0; i < data.TargetCount(); i++ {
+		child := data.TargetAt(i)
 		if child == nil {
 			fmt.Printf("%d: nil\n", i)
 		} else {
-			fmt.Printf("%d: %s %s\n", i, child.TypeId(), reflect.TypeOf(child))
+			fmt.Printf("%d: %s %s\n", i, child.TargetTypeId(), reflect.TypeOf(child))
 		}
 	}
 

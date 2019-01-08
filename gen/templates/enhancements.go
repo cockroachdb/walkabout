@@ -20,7 +20,9 @@ func init() {
 {{- $v := . -}}
 {{- $abstract := t $v "Abstract" -}}
 {{- $Abstract := T $v "Abstract" -}}
+{{- $ChildAt := T $v "At" -}}
 {{- $Engine := t $v "Engine" -}}
+{{- $NumChildren := T $v "Count" -}}
 {{- $identify := t $v "Identify" -}}
 {{- $Root := $v.Root -}}
 {{- $TypeId := T $v "TypeId" -}}
@@ -35,8 +37,8 @@ type {{ $abstract }} struct {
 }
 var _ {{ $Abstract }} = &{{ $abstract }}{}
 
-// ChildAt implements {{ $Abstract }}.
-func (a *{{ $abstract }}) ChildAt(index int) (ret {{ $Abstract }}) {
+// {{ $ChildAt }} implements {{ $Abstract }}.
+func (a *{{ $abstract }}) {{ $ChildAt }}(index int) (ret {{ $Abstract }}) {
 	impl := a.delegate.ChildAt(index)
 	if impl == nil {
 		return nil
@@ -52,28 +54,28 @@ func (a *{{ $abstract }}) ChildAt(index int) (ret {{ $Abstract }}) {
 	return
 }
 
-// NumChildren implements {{ $Abstract }}.
-func (a *{{ $abstract }}) NumChildren() int {
+// {{ $NumChildren }} implements {{ $Abstract }}.
+func (a *{{ $abstract }}) {{ $NumChildren }} () int {
 	return a.delegate.NumChildren()
 }
 
-// TypeId implements {{ $Abstract }}.
-func (a *{{ $abstract }}) TypeId() {{ $TypeId }} {
+// {{ $TypeId }} implements {{ $Abstract }}.
+func (a *{{ $abstract }}) {{ $TypeId }}() {{ $TypeId }} {
 	return {{ $TypeId }}(a.delegate.TypeId())
 }
 
 {{ range $s := Structs $v }}
-// ChildAt implements {{ $Abstract }}.
-func (x *{{ $s }}) ChildAt(index int) {{ $Abstract }} {
-	self := &{{ $abstract }}{ {{ $Engine }}.Abstract(e.TypeId({{ TypeId $s }}), e.Ptr(x)) }
-	return self.ChildAt(index)
+// {{ $ChildAt }} implements {{ $Abstract }}.
+func (x *{{ $s }}) {{ $ChildAt }}(index int) {{ $Abstract }} {
+	self := {{ $abstract }}{ {{ $Engine }}.Abstract(e.TypeId({{ TypeId $s }}), e.Ptr(x)) }
+	return self.{{ $ChildAt }}(index)
 }
 
-// NumChildren returns {{ len $s.Fields }}.
-func (x *{{ $s }}) NumChildren() int { return {{ len $s.Fields }} }
+// {{ $NumChildren }} returns {{ len $s.Fields }}.
+func (x *{{ $s }}) {{ $NumChildren }}() int { return {{ len $s.Fields }} }
 
-// TypeId returns {{ TypeId $s }}.
-func (*{{ $s }}) TypeId() {{ $TypeId }} { return {{ TypeId $s }} }
+// {{ $TypeId }} returns {{ TypeId $s }}.
+func (*{{ $s }}) {{ $TypeId }}() {{ $TypeId }} { return {{ TypeId $s }} }
 
 // Walk{{ $Root }} visits the receiver with the provided callback. 
 func (x *{{ $s }}) Walk{{ $Root }}(fn {{ $WalkerFn }}) (_ *{{ $s }}, changed bool, err error) {

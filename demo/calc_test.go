@@ -13,8 +13,6 @@
 // permissions and limitations under the License. See the AUTHORS file
 // for names of contributors.
 
-//+build !generationTest
-
 package demo
 
 import (

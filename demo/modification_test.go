@@ -48,8 +48,8 @@ func TestChildAt(t *testing.T) {
 		a := assert.New(t)
 		c := &l.ContainerType{}
 		abstractWalk(c)
-		for i, j := 0, c.NumChildren(); i < j; i++ {
-			child := c.ChildAt(i)
+		for i, j := 0, c.TargetCount(); i < j; i++ {
+			child := c.TargetAt(i)
 			switch i {
 			case 0, 4:
 				a.NotNilf(child, "at index %d", i)
@@ -64,8 +64,8 @@ func TestChildAt(t *testing.T) {
 		a := assert.New(t)
 		c, _ := l.NewContainer(true)
 		abstractWalk(c)
-		for i, j := 0, c.NumChildren(); i < j; i++ {
-			child := c.ChildAt(i)
+		for i, j := 0, c.TargetCount(); i < j; i++ {
+			child := c.TargetAt(i)
 			switch i {
 			case 8:
 				// The *Container field
@@ -79,8 +79,8 @@ func TestChildAt(t *testing.T) {
 		a := assert.New(t)
 		c, _ := l.NewContainer(false)
 		abstractWalk(c)
-		for i, j := 0, c.NumChildren(); i < j; i++ {
-			child := c.ChildAt(i)
+		for i, j := 0, c.TargetCount(); i < j; i++ {
+			child := c.TargetAt(i)
 			switch i {
 			case 8:
 				// The *Container field
@@ -186,8 +186,8 @@ func abstractWalk(x l.TargetAbstract) {
 	if x == nil {
 		return
 	}
-	for i, j := 0, x.NumChildren(); i < j; i++ {
-		abstractWalk(x.ChildAt(i))
+	for i, j := 0, x.TargetCount(); i < j; i++ {
+		abstractWalk(x.TargetAt(i))
 	}
 }
 

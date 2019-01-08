@@ -20,9 +20,11 @@ func init() {
 {{- $v := . -}}
 {{- $Abstract := T $v "Abstract" -}}
 {{- $Action := T $v "Action" -}}
+{{- $ChildAt := T $v "At" -}}
 {{- $Context := T $v "Context" -}}
 {{- $Decision := T $v "Decision" -}}
 {{- $identify := t $v "Identify" -}}
+{{- $NumChildren := T $v "Count" -}}
 {{- $Root := $v.Root -}}
 {{- $TypeId := T $v "TypeId " -}}
 {{- $WalkerFn := T $v "WalkerFn" -}}
@@ -36,18 +38,18 @@ type {{ $TypeId }} e.TypeId
 // tree of nodes. All visitable struct types will have generated methods
 // which implement this interface. 
 type {{ $Abstract }} interface {
-	// ChildAt returns the nth field of a struct or nth element of a
+	// {{ $ChildAt }} returns the nth field of a struct or nth element of a
 	// slice. If the child is a type which directly implements
 	// {{ $Abstract }}, it will be returned. If the child is of a pointer or
 	// interface type, the value will be automatically dereferenced if it
 	// is non-nil. If the child is a slice type, a {{ $Abstract }} wrapper
 	// around the slice will be returned.
-	ChildAt(index int) {{ $Abstract }}
-	// NumChildren returns the number of visitable fields in a struct,
+	{{ $ChildAt }}(index int) {{ $Abstract }}
+	// {{ $NumChildren }} returns the number of visitable fields in a struct,
 	// or the length of a slice.
-	NumChildren() int
-	// TypeId returns a type token.
-	TypeId() {{ $TypeId }}
+	{{ $NumChildren }}() int
+	// {{ $TypeId }} returns a type token.
+	{{ $TypeId }}() {{ $TypeId }}
 }
 
 var (

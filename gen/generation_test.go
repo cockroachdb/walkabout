@@ -18,10 +18,12 @@ package gen
 import (
 	"bytes"
 	"io"
+	"path/filepath"
 	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"golang.org/x/tools/go/packages"
 )
 
 var configs = map[string]config{
@@ -52,7 +54,7 @@ var configs = map[string]config{
 
 // Verify that our example data in the demo package is correct and
 // that we won't break the existing test code with updated outputs.
-// This test has two passes.  The first generates the code we want
+// This test has two phases.  The first generates the code we want
 // to emit and the second performs a complete type-checking of the
 // demo package to make sure that any changes to the generated
 // code will compile.
@@ -143,15 +145,14 @@ func TestExampleData(t *testing.T) {
 				v.checkVisitableInterface(a, "EmbedsTarget")
 			}
 
-			g, _, err = newGeneration()
-			if !a.NoError(err) {
-				return
-			}
-			g.fullCheck = true
-			g.extraTestSource = outputs
-			if !a.NoError(g.Execute(), "could not parse with generated code") {
-				for k, v := range outputs {
-					t.Logf("%s\n%s\n\n\n", k, string(v))
+			cfg := g.packageConfig()
+			cfg.Mode = packages.LoadAllSyntax
+			cfg.Overlay = outputs
+
+			pkgs, err := packages.Load(cfg, ".")
+			if a.NoError(err) {
+				for _, pkg := range pkgs {
+					a.Nil(pkg.Errors)
 				}
 			}
 		})
@@ -220,6 +221,11 @@ func newGenerationForTesting(cfg config, outputs map[string][]byte) (*generation
 	}
 	var mu sync.Mutex
 	g.writeCloser = func(name string) (io.WriteCloser, error) {
+		// Use absolute filenames for compatibility with package overlay.
+		name, err := filepath.Abs(name)
+		if err != nil {
+			return nil, err
+		}
 		return newMapWriter(name, &mu, outputs), nil
 	}
 	return g, nil

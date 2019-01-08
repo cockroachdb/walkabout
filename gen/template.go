@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"go/format"
 	"go/types"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -91,7 +92,7 @@ var funcMap = template.FuncMap{
 		}
 	},
 	// Package returns the name of the package we're working in.
-	"Package": func(v *visitation) string { return v.pkg.Name() },
+	"Package": func(v *visitation) string { return path.Base(v.packagePath) },
 	// Pointers returns a sortable map of all pointer types used.
 	"Pointers": func(v *visitation) map[string]pointerType {
 		ret := make(map[string]pointerType)
@@ -117,7 +118,7 @@ var funcMap = template.FuncMap{
 		if v.Root.Named == nil {
 			return ""
 		}
-		return v.gen.fileSet.Position(v.Root.Obj().Pos()).Filename
+		return filepath.Base(v.gen.fileSet.Position(v.Root.Obj().Pos()).Filename)
 	},
 	// Structs returns a sortable map of all slice types used.
 	"Structs": func(v *visitation) map[string]namedStruct {
