@@ -123,7 +123,7 @@ func (a *Abstract) Ptr() Ptr {
 	return a.value
 }
 
-// TypeId returns the type token of the embedded value.
-func (a *Abstract) TypeId() TypeId {
-	return a.typeData.TypeId
+// TypeID returns the type token of the embedded value.
+func (a *Abstract) TypeID() TypeID {
+	return a.typeData.TypeID
 }

@@ -12,8 +12,8 @@ import (
 
 // ------ API and public types ------
 
-// TargetTypeId  is a lightweight type token.
-type TargetTypeId e.TypeId
+// TargetTypeID is a lightweight type token.
+type TargetTypeID e.TypeID
 
 // TargetAbstract allows users to treat a Target as an abstract
 // tree of nodes. All visitable struct types will have generated methods
@@ -29,8 +29,8 @@ type TargetAbstract interface {
 	// TargetCount returns the number of visitable fields in a struct,
 	// or the length of a slice.
 	TargetCount() int
-	// TargetTypeId  returns a type token.
-	TargetTypeId() TargetTypeId
+	// TargetTypeID returns a type token.
+	TargetTypeID() TargetTypeID
 }
 
 var (
@@ -126,19 +126,19 @@ func (d TargetDecision) Replace(x Target) TargetDecision {
 
 // targetIdentify is a utility function to map a Target into
 // its generated type id and a pointer to the data.
-func targetIdentify(x Target) (typeId e.TypeId, data e.Ptr) {
+func targetIdentify(x Target) (typeId e.TypeID, data e.Ptr) {
 	switch t := x.(type) {
 	case *ByRefType:
-		typeId = e.TypeId(TargetTypeByRefType)
+		typeId = e.TypeID(TargetTypeByRefType)
 		data = e.Ptr(t)
 	case ByValType:
-		typeId = e.TypeId(TargetTypeByValType)
+		typeId = e.TypeID(TargetTypeByValType)
 		data = e.Ptr(&t)
 	case *ByValType:
-		typeId = e.TypeId(TargetTypeByValType)
+		typeId = e.TypeID(TargetTypeByValType)
 		data = e.Ptr(t)
 	case *ContainerType:
-		typeId = e.TypeId(TargetTypeContainerType)
+		typeId = e.TypeID(TargetTypeContainerType)
 		data = e.Ptr(t)
 	default:
 		// The most probable reason for this is that the generated code
@@ -151,8 +151,8 @@ func targetIdentify(x Target) (typeId e.TypeId, data e.Ptr) {
 
 // targetWrap is a utility function to reconstitute a Target
 // from an internal type token and a pointer to the value.
-func targetWrap(typeId e.TypeId, x e.Ptr) Target {
-	switch TargetTypeId(typeId) {
+func targetWrap(typeId e.TypeID, x e.Ptr) Target {
+	switch TargetTypeID(typeId) {
 	case TargetTypeByRefType:
 		return (*ByRefType)(x)
 	case TargetTypeByRefTypePtr:
@@ -167,7 +167,7 @@ func targetWrap(typeId e.TypeId, x e.Ptr) Target {
 		return *(**ContainerType)(x)
 	default:
 		// This is likely a code-generation problem.
-		panic(fmt.Sprintf("unhandled TypeId: %d", typeId))
+		panic(fmt.Sprintf("unhandled TypeID %d", typeId))
 	}
 }
 
@@ -177,7 +177,7 @@ type TargetAction e.Action
 
 // ActionVisit constructs a TargetAction that will visit the given value.
 func (c *TargetContext) ActionVisit(x Target) TargetAction {
-	return TargetAction(c.impl.ActionVisitTypeId(targetIdentify(x)))
+	return TargetAction(c.impl.ActionVisitTypeID(targetIdentify(x)))
 }
 
 // ActionCall constructs a TargetAction that will invoke the given callback.
@@ -200,7 +200,7 @@ func (a *targetAbstract) TargetAt(index int) (ret TargetAbstract) {
 	if impl == nil {
 		return nil
 	}
-	switch TargetTypeId(impl.TypeId()) {
+	switch TargetTypeID(impl.TypeID()) {
 	case TargetTypeByRefType:
 		ret = (*ByRefType)(impl.Ptr())
 	case TargetTypeByRefTypePtr:
@@ -224,27 +224,27 @@ func (a *targetAbstract) TargetCount() int {
 	return a.delegate.NumChildren()
 }
 
-// TargetTypeId implements TargetAbstract.
-func (a *targetAbstract) TargetTypeId() TargetTypeId {
-	return TargetTypeId(a.delegate.TypeId())
+// TargetTypeID implements TargetAbstract.
+func (a *targetAbstract) TargetTypeID() TargetTypeID {
+	return TargetTypeID(a.delegate.TypeID())
 }
 
 // TargetAt implements TargetAbstract.
 func (x *ByRefType) TargetAt(index int) TargetAbstract {
-	self := targetAbstract{targetEngine.Abstract(e.TypeId(TargetTypeByRefType), e.Ptr(x))}
+	self := targetAbstract{targetEngine.Abstract(e.TypeID(TargetTypeByRefType), e.Ptr(x))}
 	return self.TargetAt(index)
 }
 
 // TargetCount returns 0.
 func (x *ByRefType) TargetCount() int { return 0 }
 
-// TargetTypeId returns TargetTypeByRefType.
-func (*ByRefType) TargetTypeId() TargetTypeId { return TargetTypeByRefType }
+// TargetTypeID returns TargetTypeByRefType.
+func (*ByRefType) TargetTypeID() TargetTypeID { return TargetTypeByRefType }
 
 // WalkTarget visits the receiver with the provided callback.
 func (x *ByRefType) WalkTarget(fn TargetWalkerFn) (_ *ByRefType, changed bool, err error) {
 	var y e.Ptr
-	_, y, changed, err = targetEngine.Execute(fn, e.TypeId(TargetTypeByRefType), e.Ptr(x), e.TypeId(TargetTypeByRefType))
+	_, y, changed, err = targetEngine.Execute(fn, e.TypeID(TargetTypeByRefType), e.Ptr(x), e.TypeID(TargetTypeByRefType))
 	if err != nil {
 		return nil, false, err
 	}
@@ -253,20 +253,20 @@ func (x *ByRefType) WalkTarget(fn TargetWalkerFn) (_ *ByRefType, changed bool, e
 
 // TargetAt implements TargetAbstract.
 func (x *ByValType) TargetAt(index int) TargetAbstract {
-	self := targetAbstract{targetEngine.Abstract(e.TypeId(TargetTypeByValType), e.Ptr(x))}
+	self := targetAbstract{targetEngine.Abstract(e.TypeID(TargetTypeByValType), e.Ptr(x))}
 	return self.TargetAt(index)
 }
 
 // TargetCount returns 0.
 func (x *ByValType) TargetCount() int { return 0 }
 
-// TargetTypeId returns TargetTypeByValType.
-func (*ByValType) TargetTypeId() TargetTypeId { return TargetTypeByValType }
+// TargetTypeID returns TargetTypeByValType.
+func (*ByValType) TargetTypeID() TargetTypeID { return TargetTypeByValType }
 
 // WalkTarget visits the receiver with the provided callback.
 func (x *ByValType) WalkTarget(fn TargetWalkerFn) (_ *ByValType, changed bool, err error) {
 	var y e.Ptr
-	_, y, changed, err = targetEngine.Execute(fn, e.TypeId(TargetTypeByValType), e.Ptr(x), e.TypeId(TargetTypeByValType))
+	_, y, changed, err = targetEngine.Execute(fn, e.TypeID(TargetTypeByValType), e.Ptr(x), e.TypeID(TargetTypeByValType))
 	if err != nil {
 		return nil, false, err
 	}
@@ -275,20 +275,20 @@ func (x *ByValType) WalkTarget(fn TargetWalkerFn) (_ *ByValType, changed bool, e
 
 // TargetAt implements TargetAbstract.
 func (x *ContainerType) TargetAt(index int) TargetAbstract {
-	self := targetAbstract{targetEngine.Abstract(e.TypeId(TargetTypeContainerType), e.Ptr(x))}
+	self := targetAbstract{targetEngine.Abstract(e.TypeID(TargetTypeContainerType), e.Ptr(x))}
 	return self.TargetAt(index)
 }
 
 // TargetCount returns 16.
 func (x *ContainerType) TargetCount() int { return 16 }
 
-// TargetTypeId returns TargetTypeContainerType.
-func (*ContainerType) TargetTypeId() TargetTypeId { return TargetTypeContainerType }
+// TargetTypeID returns TargetTypeContainerType.
+func (*ContainerType) TargetTypeID() TargetTypeID { return TargetTypeContainerType }
 
 // WalkTarget visits the receiver with the provided callback.
 func (x *ContainerType) WalkTarget(fn TargetWalkerFn) (_ *ContainerType, changed bool, err error) {
 	var y e.Ptr
-	_, y, changed, err = targetEngine.Execute(fn, e.TypeId(TargetTypeContainerType), e.Ptr(x), e.TypeId(TargetTypeContainerType))
+	_, y, changed, err = targetEngine.Execute(fn, e.TypeID(TargetTypeContainerType), e.Ptr(x), e.TypeID(TargetTypeContainerType))
 	if err != nil {
 		return nil, false, err
 	}
@@ -298,7 +298,7 @@ func (x *ContainerType) WalkTarget(fn TargetWalkerFn) (_ *ContainerType, changed
 // WalkTarget visits the receiver with the provided callback.
 func WalkTarget(x Target, fn TargetWalkerFn) (_ Target, changed bool, err error) {
 	id, ptr := targetIdentify(x)
-	id, ptr, changed, err = targetEngine.Execute(fn, id, ptr, e.TypeId(TargetTypeTarget))
+	id, ptr, changed, err = targetEngine.Execute(fn, id, ptr, e.TypeID(TargetTypeTarget))
 	if err != nil {
 		return nil, false, err
 	}
@@ -321,7 +321,7 @@ var targetEngine = e.New(e.TypeMap{
 		NewStruct: func() e.Ptr { return e.Ptr(&ByRefType{}) },
 		SizeOf:    unsafe.Sizeof(ByRefType{}),
 		Kind:      e.KindStruct,
-		TypeId:    e.TypeId(TargetTypeByRefType),
+		TypeID:    e.TypeID(TargetTypeByRefType),
 	},
 	TargetTypeByValType: {
 		Copy: func(dest, from e.Ptr) { *(*ByValType)(dest) = *(*ByValType)(from) },
@@ -333,7 +333,7 @@ var targetEngine = e.New(e.TypeMap{
 		NewStruct: func() e.Ptr { return e.Ptr(&ByValType{}) },
 		SizeOf:    unsafe.Sizeof(ByValType{}),
 		Kind:      e.KindStruct,
-		TypeId:    e.TypeId(TargetTypeByValType),
+		TypeID:    e.TypeID(TargetTypeByValType),
 	},
 	TargetTypeContainerType: {
 		Copy: func(dest, from e.Ptr) { *(*ContainerType)(dest) = *(*ContainerType)(from) },
@@ -341,28 +341,28 @@ var targetEngine = e.New(e.TypeMap{
 			return e.Decision(fn.(TargetWalkerFn)(TargetContext{impl}, (*ContainerType)(x)))
 		},
 		Fields: []e.FieldInfo{
-			{Name: "ByRef", Offset: unsafe.Offsetof(ContainerType{}.ByRef), Target: e.TypeId(TargetTypeByRefType)},
-			{Name: "ByRefPtr", Offset: unsafe.Offsetof(ContainerType{}.ByRefPtr), Target: e.TypeId(TargetTypeByRefTypePtr)},
-			{Name: "ByRefSlice", Offset: unsafe.Offsetof(ContainerType{}.ByRefSlice), Target: e.TypeId(TargetTypeByRefTypeSlice)},
-			{Name: "ByRefPtrSlice", Offset: unsafe.Offsetof(ContainerType{}.ByRefPtrSlice), Target: e.TypeId(TargetTypeByRefTypePtrSlice)},
-			{Name: "ByVal", Offset: unsafe.Offsetof(ContainerType{}.ByVal), Target: e.TypeId(TargetTypeByValType)},
-			{Name: "ByValPtr", Offset: unsafe.Offsetof(ContainerType{}.ByValPtr), Target: e.TypeId(TargetTypeByValTypePtr)},
-			{Name: "ByValSlice", Offset: unsafe.Offsetof(ContainerType{}.ByValSlice), Target: e.TypeId(TargetTypeByValTypeSlice)},
-			{Name: "ByValPtrSlice", Offset: unsafe.Offsetof(ContainerType{}.ByValPtrSlice), Target: e.TypeId(TargetTypeByValTypePtrSlice)},
-			{Name: "Container", Offset: unsafe.Offsetof(ContainerType{}.Container), Target: e.TypeId(TargetTypeContainerTypePtr)},
-			{Name: "AnotherTarget", Offset: unsafe.Offsetof(ContainerType{}.AnotherTarget), Target: e.TypeId(TargetTypeTarget)},
-			{Name: "AnotherTargetPtr", Offset: unsafe.Offsetof(ContainerType{}.AnotherTargetPtr), Target: e.TypeId(TargetTypeTargetPtr)},
-			{Name: "EmbedsTarget", Offset: unsafe.Offsetof(ContainerType{}.EmbedsTarget), Target: e.TypeId(TargetTypeEmbedsTarget)},
-			{Name: "EmbedsTargetPtr", Offset: unsafe.Offsetof(ContainerType{}.EmbedsTargetPtr), Target: e.TypeId(TargetTypeEmbedsTargetPtr)},
-			{Name: "TargetSlice", Offset: unsafe.Offsetof(ContainerType{}.TargetSlice), Target: e.TypeId(TargetTypeTargetSlice)},
-			{Name: "InterfacePtrSlice", Offset: unsafe.Offsetof(ContainerType{}.InterfacePtrSlice), Target: e.TypeId(TargetTypeTargetPtrSlice)},
-			{Name: "NamedTargets", Offset: unsafe.Offsetof(ContainerType{}.NamedTargets), Target: e.TypeId(TargetTypeTargetSlice)},
+			{Name: "ByRef", Offset: unsafe.Offsetof(ContainerType{}.ByRef), Target: e.TypeID(TargetTypeByRefType)},
+			{Name: "ByRefPtr", Offset: unsafe.Offsetof(ContainerType{}.ByRefPtr), Target: e.TypeID(TargetTypeByRefTypePtr)},
+			{Name: "ByRefSlice", Offset: unsafe.Offsetof(ContainerType{}.ByRefSlice), Target: e.TypeID(TargetTypeByRefTypeSlice)},
+			{Name: "ByRefPtrSlice", Offset: unsafe.Offsetof(ContainerType{}.ByRefPtrSlice), Target: e.TypeID(TargetTypeByRefTypePtrSlice)},
+			{Name: "ByVal", Offset: unsafe.Offsetof(ContainerType{}.ByVal), Target: e.TypeID(TargetTypeByValType)},
+			{Name: "ByValPtr", Offset: unsafe.Offsetof(ContainerType{}.ByValPtr), Target: e.TypeID(TargetTypeByValTypePtr)},
+			{Name: "ByValSlice", Offset: unsafe.Offsetof(ContainerType{}.ByValSlice), Target: e.TypeID(TargetTypeByValTypeSlice)},
+			{Name: "ByValPtrSlice", Offset: unsafe.Offsetof(ContainerType{}.ByValPtrSlice), Target: e.TypeID(TargetTypeByValTypePtrSlice)},
+			{Name: "Container", Offset: unsafe.Offsetof(ContainerType{}.Container), Target: e.TypeID(TargetTypeContainerTypePtr)},
+			{Name: "AnotherTarget", Offset: unsafe.Offsetof(ContainerType{}.AnotherTarget), Target: e.TypeID(TargetTypeTarget)},
+			{Name: "AnotherTargetPtr", Offset: unsafe.Offsetof(ContainerType{}.AnotherTargetPtr), Target: e.TypeID(TargetTypeTargetPtr)},
+			{Name: "EmbedsTarget", Offset: unsafe.Offsetof(ContainerType{}.EmbedsTarget), Target: e.TypeID(TargetTypeEmbedsTarget)},
+			{Name: "EmbedsTargetPtr", Offset: unsafe.Offsetof(ContainerType{}.EmbedsTargetPtr), Target: e.TypeID(TargetTypeEmbedsTargetPtr)},
+			{Name: "TargetSlice", Offset: unsafe.Offsetof(ContainerType{}.TargetSlice), Target: e.TypeID(TargetTypeTargetSlice)},
+			{Name: "InterfacePtrSlice", Offset: unsafe.Offsetof(ContainerType{}.InterfacePtrSlice), Target: e.TypeID(TargetTypeTargetPtrSlice)},
+			{Name: "NamedTargets", Offset: unsafe.Offsetof(ContainerType{}.NamedTargets), Target: e.TypeID(TargetTypeTargetSlice)},
 		},
 		Name:      "ContainerType",
 		NewStruct: func() e.Ptr { return e.Ptr(&ContainerType{}) },
 		SizeOf:    unsafe.Sizeof(ContainerType{}),
 		Kind:      e.KindStruct,
-		TypeId:    e.TypeId(TargetTypeContainerType),
+		TypeID:    e.TypeID(TargetTypeContainerType),
 	},
 
 	// ------ Interfaces ------
@@ -370,20 +370,20 @@ var targetEngine = e.New(e.TypeMap{
 		Copy: func(dest, from e.Ptr) {
 			*(*EmbedsTarget)(dest) = *(*EmbedsTarget)(from)
 		},
-		IntfType: func(x e.Ptr) e.TypeId {
+		IntfType: func(x e.Ptr) e.TypeID {
 			d := *(*EmbedsTarget)(x)
 			switch d.(type) {
 			case ByValType:
-				return e.TypeId(TargetTypeByValType)
+				return e.TypeID(TargetTypeByValType)
 			case *ByValType:
-				return e.TypeId(TargetTypeByValType)
+				return e.TypeID(TargetTypeByValType)
 			default:
 				return 0
 			}
 		},
-		IntfWrap: func(id e.TypeId, x e.Ptr) e.Ptr {
+		IntfWrap: func(id e.TypeID, x e.Ptr) e.Ptr {
 			var d EmbedsTarget
-			switch TargetTypeId(id) {
+			switch TargetTypeID(id) {
 			case TargetTypeByValType:
 				d = (*ByValType)(x)
 			case TargetTypeByValTypePtr:
@@ -396,30 +396,30 @@ var targetEngine = e.New(e.TypeMap{
 		Kind:   e.KindInterface,
 		Name:   "EmbedsTarget",
 		SizeOf: unsafe.Sizeof(EmbedsTarget(nil)),
-		TypeId: e.TypeId(TargetTypeEmbedsTarget),
+		TypeID: e.TypeID(TargetTypeEmbedsTarget),
 	},
 	TargetTypeTarget: {
 		Copy: func(dest, from e.Ptr) {
 			*(*Target)(dest) = *(*Target)(from)
 		},
-		IntfType: func(x e.Ptr) e.TypeId {
+		IntfType: func(x e.Ptr) e.TypeID {
 			d := *(*Target)(x)
 			switch d.(type) {
 			case *ByRefType:
-				return e.TypeId(TargetTypeByRefType)
+				return e.TypeID(TargetTypeByRefType)
 			case ByValType:
-				return e.TypeId(TargetTypeByValType)
+				return e.TypeID(TargetTypeByValType)
 			case *ByValType:
-				return e.TypeId(TargetTypeByValType)
+				return e.TypeID(TargetTypeByValType)
 			case *ContainerType:
-				return e.TypeId(TargetTypeContainerType)
+				return e.TypeID(TargetTypeContainerType)
 			default:
 				return 0
 			}
 		},
-		IntfWrap: func(id e.TypeId, x e.Ptr) e.Ptr {
+		IntfWrap: func(id e.TypeID, x e.Ptr) e.Ptr {
 			var d Target
-			switch TargetTypeId(id) {
+			switch TargetTypeID(id) {
 			case TargetTypeByRefType:
 				d = (*ByRefType)(x)
 			case TargetTypeByRefTypePtr:
@@ -440,7 +440,7 @@ var targetEngine = e.New(e.TypeMap{
 		Kind:   e.KindInterface,
 		Name:   "Target",
 		SizeOf: unsafe.Sizeof(Target(nil)),
-		TypeId: e.TypeId(TargetTypeTarget),
+		TypeID: e.TypeID(TargetTypeTarget),
 	},
 
 	// ------ Pointers ------
@@ -448,46 +448,46 @@ var targetEngine = e.New(e.TypeMap{
 		Copy: func(dest, from e.Ptr) {
 			*(**ByRefType)(dest) = *(**ByRefType)(from)
 		},
-		Elem:   e.TypeId(TargetTypeByRefType),
+		Elem:   e.TypeID(TargetTypeByRefType),
 		SizeOf: unsafe.Sizeof((*ByRefType)(nil)),
 		Kind:   e.KindPointer,
-		TypeId: e.TypeId(TargetTypeByRefTypePtr),
+		TypeID: e.TypeID(TargetTypeByRefTypePtr),
 	},
 	TargetTypeByValTypePtr: {
 		Copy: func(dest, from e.Ptr) {
 			*(**ByValType)(dest) = *(**ByValType)(from)
 		},
-		Elem:   e.TypeId(TargetTypeByValType),
+		Elem:   e.TypeID(TargetTypeByValType),
 		SizeOf: unsafe.Sizeof((*ByValType)(nil)),
 		Kind:   e.KindPointer,
-		TypeId: e.TypeId(TargetTypeByValTypePtr),
+		TypeID: e.TypeID(TargetTypeByValTypePtr),
 	},
 	TargetTypeContainerTypePtr: {
 		Copy: func(dest, from e.Ptr) {
 			*(**ContainerType)(dest) = *(**ContainerType)(from)
 		},
-		Elem:   e.TypeId(TargetTypeContainerType),
+		Elem:   e.TypeID(TargetTypeContainerType),
 		SizeOf: unsafe.Sizeof((*ContainerType)(nil)),
 		Kind:   e.KindPointer,
-		TypeId: e.TypeId(TargetTypeContainerTypePtr),
+		TypeID: e.TypeID(TargetTypeContainerTypePtr),
 	},
 	TargetTypeEmbedsTargetPtr: {
 		Copy: func(dest, from e.Ptr) {
 			*(**EmbedsTarget)(dest) = *(**EmbedsTarget)(from)
 		},
-		Elem:   e.TypeId(TargetTypeEmbedsTarget),
+		Elem:   e.TypeID(TargetTypeEmbedsTarget),
 		SizeOf: unsafe.Sizeof((*EmbedsTarget)(nil)),
 		Kind:   e.KindPointer,
-		TypeId: e.TypeId(TargetTypeEmbedsTargetPtr),
+		TypeID: e.TypeID(TargetTypeEmbedsTargetPtr),
 	},
 	TargetTypeTargetPtr: {
 		Copy: func(dest, from e.Ptr) {
 			*(**Target)(dest) = *(**Target)(from)
 		},
-		Elem:   e.TypeId(TargetTypeTarget),
+		Elem:   e.TypeID(TargetTypeTarget),
 		SizeOf: unsafe.Sizeof((*Target)(nil)),
 		Kind:   e.KindPointer,
-		TypeId: e.TypeId(TargetTypeTargetPtr),
+		TypeID: e.TypeID(TargetTypeTargetPtr),
 	},
 
 	// ------ Slices ------
@@ -495,85 +495,85 @@ var targetEngine = e.New(e.TypeMap{
 		Copy: func(dest, from e.Ptr) {
 			*(*[]*ByRefType)(dest) = *(*[]*ByRefType)(from)
 		},
-		Elem: e.TypeId(TargetTypeByRefTypePtr),
+		Elem: e.TypeID(TargetTypeByRefTypePtr),
 		Kind: e.KindSlice,
 		NewSlice: func(size int) e.Ptr {
 			x := make([]*ByRefType, size)
 			return e.Ptr(&x)
 		},
 		SizeOf: unsafe.Sizeof(([]*ByRefType)(nil)),
-		TypeId: e.TypeId(TargetTypeByRefTypePtrSlice),
+		TypeID: e.TypeID(TargetTypeByRefTypePtrSlice),
 	},
 	TargetTypeByValTypePtrSlice: {
 		Copy: func(dest, from e.Ptr) {
 			*(*[]*ByValType)(dest) = *(*[]*ByValType)(from)
 		},
-		Elem: e.TypeId(TargetTypeByValTypePtr),
+		Elem: e.TypeID(TargetTypeByValTypePtr),
 		Kind: e.KindSlice,
 		NewSlice: func(size int) e.Ptr {
 			x := make([]*ByValType, size)
 			return e.Ptr(&x)
 		},
 		SizeOf: unsafe.Sizeof(([]*ByValType)(nil)),
-		TypeId: e.TypeId(TargetTypeByValTypePtrSlice),
+		TypeID: e.TypeID(TargetTypeByValTypePtrSlice),
 	},
 	TargetTypeTargetPtrSlice: {
 		Copy: func(dest, from e.Ptr) {
 			*(*[]*Target)(dest) = *(*[]*Target)(from)
 		},
-		Elem: e.TypeId(TargetTypeTargetPtr),
+		Elem: e.TypeID(TargetTypeTargetPtr),
 		Kind: e.KindSlice,
 		NewSlice: func(size int) e.Ptr {
 			x := make([]*Target, size)
 			return e.Ptr(&x)
 		},
 		SizeOf: unsafe.Sizeof(([]*Target)(nil)),
-		TypeId: e.TypeId(TargetTypeTargetPtrSlice),
+		TypeID: e.TypeID(TargetTypeTargetPtrSlice),
 	},
 	TargetTypeByRefTypeSlice: {
 		Copy: func(dest, from e.Ptr) {
 			*(*[]ByRefType)(dest) = *(*[]ByRefType)(from)
 		},
-		Elem: e.TypeId(TargetTypeByRefType),
+		Elem: e.TypeID(TargetTypeByRefType),
 		Kind: e.KindSlice,
 		NewSlice: func(size int) e.Ptr {
 			x := make([]ByRefType, size)
 			return e.Ptr(&x)
 		},
 		SizeOf: unsafe.Sizeof(([]ByRefType)(nil)),
-		TypeId: e.TypeId(TargetTypeByRefTypeSlice),
+		TypeID: e.TypeID(TargetTypeByRefTypeSlice),
 	},
 	TargetTypeByValTypeSlice: {
 		Copy: func(dest, from e.Ptr) {
 			*(*[]ByValType)(dest) = *(*[]ByValType)(from)
 		},
-		Elem: e.TypeId(TargetTypeByValType),
+		Elem: e.TypeID(TargetTypeByValType),
 		Kind: e.KindSlice,
 		NewSlice: func(size int) e.Ptr {
 			x := make([]ByValType, size)
 			return e.Ptr(&x)
 		},
 		SizeOf: unsafe.Sizeof(([]ByValType)(nil)),
-		TypeId: e.TypeId(TargetTypeByValTypeSlice),
+		TypeID: e.TypeID(TargetTypeByValTypeSlice),
 	},
 	TargetTypeTargetSlice: {
 		Copy: func(dest, from e.Ptr) {
 			*(*[]Target)(dest) = *(*[]Target)(from)
 		},
-		Elem: e.TypeId(TargetTypeTarget),
+		Elem: e.TypeID(TargetTypeTarget),
 		Kind: e.KindSlice,
 		NewSlice: func(size int) e.Ptr {
 			x := make([]Target, size)
 			return e.Ptr(&x)
 		},
 		SizeOf: unsafe.Sizeof(([]Target)(nil)),
-		TypeId: e.TypeId(TargetTypeTargetSlice),
+		TypeID: e.TypeID(TargetTypeTargetSlice),
 	},
 })
 
 // These are lightweight type tokens.
 const (
-	_ TargetTypeId = iota
+	_ TargetTypeID = iota
 	TargetTypeByRefType
 	TargetTypeByRefTypePtr
 	TargetTypeByRefTypePtrSlice
@@ -593,6 +593,6 @@ const (
 )
 
 // String is for debugging use only.
-func (t TargetTypeId) String() string {
-	return targetEngine.Stringify(e.TypeId(t))
+func (t TargetTypeID) String() string {
+	return targetEngine.Stringify(e.TypeID(t))
 }

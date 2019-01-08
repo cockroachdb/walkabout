@@ -12,8 +12,8 @@ import (
 
 // ------ API and public types ------
 
-// CalcTypeId  is a lightweight type token.
-type CalcTypeId e.TypeId
+// CalcTypeID is a lightweight type token.
+type CalcTypeID e.TypeID
 
 // CalcAbstract allows users to treat a Calc as an abstract
 // tree of nodes. All visitable struct types will have generated methods
@@ -29,8 +29,8 @@ type CalcAbstract interface {
 	// CalcCount returns the number of visitable fields in a struct,
 	// or the length of a slice.
 	CalcCount() int
-	// CalcTypeId  returns a type token.
-	CalcTypeId() CalcTypeId
+	// CalcTypeID returns a type token.
+	CalcTypeID() CalcTypeID
 }
 
 var (
@@ -127,19 +127,19 @@ func (d CalcDecision) Replace(x Calc) CalcDecision {
 
 // calcIdentify is a utility function to map a Calc into
 // its generated type id and a pointer to the data.
-func calcIdentify(x Calc) (typeId e.TypeId, data e.Ptr) {
+func calcIdentify(x Calc) (typeId e.TypeID, data e.Ptr) {
 	switch t := x.(type) {
 	case *BinaryOp:
-		typeId = e.TypeId(CalcTypeBinaryOp)
+		typeId = e.TypeID(CalcTypeBinaryOp)
 		data = e.Ptr(t)
 	case *Calculation:
-		typeId = e.TypeId(CalcTypeCalculation)
+		typeId = e.TypeID(CalcTypeCalculation)
 		data = e.Ptr(t)
 	case *Func:
-		typeId = e.TypeId(CalcTypeFunc)
+		typeId = e.TypeID(CalcTypeFunc)
 		data = e.Ptr(t)
 	case *Scalar:
-		typeId = e.TypeId(CalcTypeScalar)
+		typeId = e.TypeID(CalcTypeScalar)
 		data = e.Ptr(t)
 	default:
 		// The most probable reason for this is that the generated code
@@ -152,8 +152,8 @@ func calcIdentify(x Calc) (typeId e.TypeId, data e.Ptr) {
 
 // calcWrap is a utility function to reconstitute a Calc
 // from an internal type token and a pointer to the value.
-func calcWrap(typeId e.TypeId, x e.Ptr) Calc {
-	switch CalcTypeId(typeId) {
+func calcWrap(typeId e.TypeID, x e.Ptr) Calc {
+	switch CalcTypeID(typeId) {
 	case CalcTypeBinaryOp:
 		return (*BinaryOp)(x)
 	case CalcTypeBinaryOpPtr:
@@ -172,7 +172,7 @@ func calcWrap(typeId e.TypeId, x e.Ptr) Calc {
 		return *(**Scalar)(x)
 	default:
 		// This is likely a code-generation problem.
-		panic(fmt.Sprintf("unhandled TypeId: %d", typeId))
+		panic(fmt.Sprintf("unhandled TypeID %d", typeId))
 	}
 }
 
@@ -182,7 +182,7 @@ type CalcAction e.Action
 
 // ActionVisit constructs a CalcAction that will visit the given value.
 func (c *CalcContext) ActionVisit(x Calc) CalcAction {
-	return CalcAction(c.impl.ActionVisitTypeId(calcIdentify(x)))
+	return CalcAction(c.impl.ActionVisitTypeID(calcIdentify(x)))
 }
 
 // ActionCall constructs a CalcAction that will invoke the given callback.
@@ -205,7 +205,7 @@ func (a *calcAbstract) CalcAt(index int) (ret CalcAbstract) {
 	if impl == nil {
 		return nil
 	}
-	switch CalcTypeId(impl.TypeId()) {
+	switch CalcTypeID(impl.TypeID()) {
 	case CalcTypeBinaryOp:
 		ret = (*BinaryOp)(impl.Ptr())
 	case CalcTypeBinaryOpPtr:
@@ -233,27 +233,27 @@ func (a *calcAbstract) CalcCount() int {
 	return a.delegate.NumChildren()
 }
 
-// CalcTypeId implements CalcAbstract.
-func (a *calcAbstract) CalcTypeId() CalcTypeId {
-	return CalcTypeId(a.delegate.TypeId())
+// CalcTypeID implements CalcAbstract.
+func (a *calcAbstract) CalcTypeID() CalcTypeID {
+	return CalcTypeID(a.delegate.TypeID())
 }
 
 // CalcAt implements CalcAbstract.
 func (x *BinaryOp) CalcAt(index int) CalcAbstract {
-	self := calcAbstract{calcEngine.Abstract(e.TypeId(CalcTypeBinaryOp), e.Ptr(x))}
+	self := calcAbstract{calcEngine.Abstract(e.TypeID(CalcTypeBinaryOp), e.Ptr(x))}
 	return self.CalcAt(index)
 }
 
 // CalcCount returns 2.
 func (x *BinaryOp) CalcCount() int { return 2 }
 
-// CalcTypeId returns CalcTypeBinaryOp.
-func (*BinaryOp) CalcTypeId() CalcTypeId { return CalcTypeBinaryOp }
+// CalcTypeID returns CalcTypeBinaryOp.
+func (*BinaryOp) CalcTypeID() CalcTypeID { return CalcTypeBinaryOp }
 
 // WalkCalc visits the receiver with the provided callback.
 func (x *BinaryOp) WalkCalc(fn CalcWalkerFn) (_ *BinaryOp, changed bool, err error) {
 	var y e.Ptr
-	_, y, changed, err = calcEngine.Execute(fn, e.TypeId(CalcTypeBinaryOp), e.Ptr(x), e.TypeId(CalcTypeBinaryOp))
+	_, y, changed, err = calcEngine.Execute(fn, e.TypeID(CalcTypeBinaryOp), e.Ptr(x), e.TypeID(CalcTypeBinaryOp))
 	if err != nil {
 		return nil, false, err
 	}
@@ -262,20 +262,20 @@ func (x *BinaryOp) WalkCalc(fn CalcWalkerFn) (_ *BinaryOp, changed bool, err err
 
 // CalcAt implements CalcAbstract.
 func (x *Calculation) CalcAt(index int) CalcAbstract {
-	self := calcAbstract{calcEngine.Abstract(e.TypeId(CalcTypeCalculation), e.Ptr(x))}
+	self := calcAbstract{calcEngine.Abstract(e.TypeID(CalcTypeCalculation), e.Ptr(x))}
 	return self.CalcAt(index)
 }
 
 // CalcCount returns 1.
 func (x *Calculation) CalcCount() int { return 1 }
 
-// CalcTypeId returns CalcTypeCalculation.
-func (*Calculation) CalcTypeId() CalcTypeId { return CalcTypeCalculation }
+// CalcTypeID returns CalcTypeCalculation.
+func (*Calculation) CalcTypeID() CalcTypeID { return CalcTypeCalculation }
 
 // WalkCalc visits the receiver with the provided callback.
 func (x *Calculation) WalkCalc(fn CalcWalkerFn) (_ *Calculation, changed bool, err error) {
 	var y e.Ptr
-	_, y, changed, err = calcEngine.Execute(fn, e.TypeId(CalcTypeCalculation), e.Ptr(x), e.TypeId(CalcTypeCalculation))
+	_, y, changed, err = calcEngine.Execute(fn, e.TypeID(CalcTypeCalculation), e.Ptr(x), e.TypeID(CalcTypeCalculation))
 	if err != nil {
 		return nil, false, err
 	}
@@ -284,20 +284,20 @@ func (x *Calculation) WalkCalc(fn CalcWalkerFn) (_ *Calculation, changed bool, e
 
 // CalcAt implements CalcAbstract.
 func (x *Func) CalcAt(index int) CalcAbstract {
-	self := calcAbstract{calcEngine.Abstract(e.TypeId(CalcTypeFunc), e.Ptr(x))}
+	self := calcAbstract{calcEngine.Abstract(e.TypeID(CalcTypeFunc), e.Ptr(x))}
 	return self.CalcAt(index)
 }
 
 // CalcCount returns 1.
 func (x *Func) CalcCount() int { return 1 }
 
-// CalcTypeId returns CalcTypeFunc.
-func (*Func) CalcTypeId() CalcTypeId { return CalcTypeFunc }
+// CalcTypeID returns CalcTypeFunc.
+func (*Func) CalcTypeID() CalcTypeID { return CalcTypeFunc }
 
 // WalkCalc visits the receiver with the provided callback.
 func (x *Func) WalkCalc(fn CalcWalkerFn) (_ *Func, changed bool, err error) {
 	var y e.Ptr
-	_, y, changed, err = calcEngine.Execute(fn, e.TypeId(CalcTypeFunc), e.Ptr(x), e.TypeId(CalcTypeFunc))
+	_, y, changed, err = calcEngine.Execute(fn, e.TypeID(CalcTypeFunc), e.Ptr(x), e.TypeID(CalcTypeFunc))
 	if err != nil {
 		return nil, false, err
 	}
@@ -306,20 +306,20 @@ func (x *Func) WalkCalc(fn CalcWalkerFn) (_ *Func, changed bool, err error) {
 
 // CalcAt implements CalcAbstract.
 func (x *Scalar) CalcAt(index int) CalcAbstract {
-	self := calcAbstract{calcEngine.Abstract(e.TypeId(CalcTypeScalar), e.Ptr(x))}
+	self := calcAbstract{calcEngine.Abstract(e.TypeID(CalcTypeScalar), e.Ptr(x))}
 	return self.CalcAt(index)
 }
 
 // CalcCount returns 0.
 func (x *Scalar) CalcCount() int { return 0 }
 
-// CalcTypeId returns CalcTypeScalar.
-func (*Scalar) CalcTypeId() CalcTypeId { return CalcTypeScalar }
+// CalcTypeID returns CalcTypeScalar.
+func (*Scalar) CalcTypeID() CalcTypeID { return CalcTypeScalar }
 
 // WalkCalc visits the receiver with the provided callback.
 func (x *Scalar) WalkCalc(fn CalcWalkerFn) (_ *Scalar, changed bool, err error) {
 	var y e.Ptr
-	_, y, changed, err = calcEngine.Execute(fn, e.TypeId(CalcTypeScalar), e.Ptr(x), e.TypeId(CalcTypeScalar))
+	_, y, changed, err = calcEngine.Execute(fn, e.TypeID(CalcTypeScalar), e.Ptr(x), e.TypeID(CalcTypeScalar))
 	if err != nil {
 		return nil, false, err
 	}
@@ -329,7 +329,7 @@ func (x *Scalar) WalkCalc(fn CalcWalkerFn) (_ *Scalar, changed bool, err error) 
 // WalkCalc visits the receiver with the provided callback.
 func WalkCalc(x Calc, fn CalcWalkerFn) (_ Calc, changed bool, err error) {
 	id, ptr := calcIdentify(x)
-	id, ptr, changed, err = calcEngine.Execute(fn, id, ptr, e.TypeId(CalcTypeCalc))
+	id, ptr, changed, err = calcEngine.Execute(fn, id, ptr, e.TypeID(CalcTypeCalc))
 	if err != nil {
 		return nil, false, err
 	}
@@ -364,14 +364,14 @@ var calcEngine = e.New(e.TypeMap{
 			return e.Decision(fn.(CalcWalkerFn)(CalcContext{impl}, (*BinaryOp)(x)))
 		},
 		Fields: []e.FieldInfo{
-			{Name: "Left", Offset: unsafe.Offsetof(BinaryOp{}.Left), Target: e.TypeId(CalcTypeExpr)},
-			{Name: "Right", Offset: unsafe.Offsetof(BinaryOp{}.Right), Target: e.TypeId(CalcTypeExpr)},
+			{Name: "Left", Offset: unsafe.Offsetof(BinaryOp{}.Left), Target: e.TypeID(CalcTypeExpr)},
+			{Name: "Right", Offset: unsafe.Offsetof(BinaryOp{}.Right), Target: e.TypeID(CalcTypeExpr)},
 		},
 		Name:      "BinaryOp",
 		NewStruct: func() e.Ptr { return e.Ptr(&BinaryOp{}) },
 		SizeOf:    unsafe.Sizeof(BinaryOp{}),
 		Kind:      e.KindStruct,
-		TypeId:    e.TypeId(CalcTypeBinaryOp),
+		TypeID:    e.TypeID(CalcTypeBinaryOp),
 	},
 	CalcTypeCalculation: {
 		Copy: func(dest, from e.Ptr) { *(*Calculation)(dest) = *(*Calculation)(from) },
@@ -379,13 +379,13 @@ var calcEngine = e.New(e.TypeMap{
 			return e.Decision(fn.(CalcWalkerFn)(CalcContext{impl}, (*Calculation)(x)))
 		},
 		Fields: []e.FieldInfo{
-			{Name: "Expr", Offset: unsafe.Offsetof(Calculation{}.Expr), Target: e.TypeId(CalcTypeExpr)},
+			{Name: "Expr", Offset: unsafe.Offsetof(Calculation{}.Expr), Target: e.TypeID(CalcTypeExpr)},
 		},
 		Name:      "Calculation",
 		NewStruct: func() e.Ptr { return e.Ptr(&Calculation{}) },
 		SizeOf:    unsafe.Sizeof(Calculation{}),
 		Kind:      e.KindStruct,
-		TypeId:    e.TypeId(CalcTypeCalculation),
+		TypeID:    e.TypeID(CalcTypeCalculation),
 	},
 	CalcTypeFunc: {
 		Copy: func(dest, from e.Ptr) { *(*Func)(dest) = *(*Func)(from) },
@@ -393,13 +393,13 @@ var calcEngine = e.New(e.TypeMap{
 			return e.Decision(fn.(CalcWalkerFn)(CalcContext{impl}, (*Func)(x)))
 		},
 		Fields: []e.FieldInfo{
-			{Name: "Args", Offset: unsafe.Offsetof(Func{}.Args), Target: e.TypeId(CalcTypeExprSlice)},
+			{Name: "Args", Offset: unsafe.Offsetof(Func{}.Args), Target: e.TypeID(CalcTypeExprSlice)},
 		},
 		Name:      "Func",
 		NewStruct: func() e.Ptr { return e.Ptr(&Func{}) },
 		SizeOf:    unsafe.Sizeof(Func{}),
 		Kind:      e.KindStruct,
-		TypeId:    e.TypeId(CalcTypeFunc),
+		TypeID:    e.TypeID(CalcTypeFunc),
 	},
 	CalcTypeScalar: {
 		Copy: func(dest, from e.Ptr) { *(*Scalar)(dest) = *(*Scalar)(from) },
@@ -411,7 +411,7 @@ var calcEngine = e.New(e.TypeMap{
 		NewStruct: func() e.Ptr { return e.Ptr(&Scalar{}) },
 		SizeOf:    unsafe.Sizeof(Scalar{}),
 		Kind:      e.KindStruct,
-		TypeId:    e.TypeId(CalcTypeScalar),
+		TypeID:    e.TypeID(CalcTypeScalar),
 	},
 
 	// ------ Interfaces ------
@@ -419,24 +419,24 @@ var calcEngine = e.New(e.TypeMap{
 		Copy: func(dest, from e.Ptr) {
 			*(*Calc)(dest) = *(*Calc)(from)
 		},
-		IntfType: func(x e.Ptr) e.TypeId {
+		IntfType: func(x e.Ptr) e.TypeID {
 			d := *(*Calc)(x)
 			switch d.(type) {
 			case *BinaryOp:
-				return e.TypeId(CalcTypeBinaryOp)
+				return e.TypeID(CalcTypeBinaryOp)
 			case *Calculation:
-				return e.TypeId(CalcTypeCalculation)
+				return e.TypeID(CalcTypeCalculation)
 			case *Func:
-				return e.TypeId(CalcTypeFunc)
+				return e.TypeID(CalcTypeFunc)
 			case *Scalar:
-				return e.TypeId(CalcTypeScalar)
+				return e.TypeID(CalcTypeScalar)
 			default:
 				return 0
 			}
 		},
-		IntfWrap: func(id e.TypeId, x e.Ptr) e.Ptr {
+		IntfWrap: func(id e.TypeID, x e.Ptr) e.Ptr {
 			var d Calc
-			switch CalcTypeId(id) {
+			switch CalcTypeID(id) {
 			case CalcTypeBinaryOp:
 				d = (*BinaryOp)(x)
 			case CalcTypeBinaryOpPtr:
@@ -461,28 +461,28 @@ var calcEngine = e.New(e.TypeMap{
 		Kind:   e.KindInterface,
 		Name:   "Calc",
 		SizeOf: unsafe.Sizeof(Calc(nil)),
-		TypeId: e.TypeId(CalcTypeCalc),
+		TypeID: e.TypeID(CalcTypeCalc),
 	},
 	CalcTypeExpr: {
 		Copy: func(dest, from e.Ptr) {
 			*(*Expr)(dest) = *(*Expr)(from)
 		},
-		IntfType: func(x e.Ptr) e.TypeId {
+		IntfType: func(x e.Ptr) e.TypeID {
 			d := *(*Expr)(x)
 			switch d.(type) {
 			case *BinaryOp:
-				return e.TypeId(CalcTypeBinaryOp)
+				return e.TypeID(CalcTypeBinaryOp)
 			case *Func:
-				return e.TypeId(CalcTypeFunc)
+				return e.TypeID(CalcTypeFunc)
 			case *Scalar:
-				return e.TypeId(CalcTypeScalar)
+				return e.TypeID(CalcTypeScalar)
 			default:
 				return 0
 			}
 		},
-		IntfWrap: func(id e.TypeId, x e.Ptr) e.Ptr {
+		IntfWrap: func(id e.TypeID, x e.Ptr) e.Ptr {
 			var d Expr
-			switch CalcTypeId(id) {
+			switch CalcTypeID(id) {
 			case CalcTypeBinaryOp:
 				d = (*BinaryOp)(x)
 			case CalcTypeBinaryOpPtr:
@@ -503,7 +503,7 @@ var calcEngine = e.New(e.TypeMap{
 		Kind:   e.KindInterface,
 		Name:   "Expr",
 		SizeOf: unsafe.Sizeof(Expr(nil)),
-		TypeId: e.TypeId(CalcTypeExpr),
+		TypeID: e.TypeID(CalcTypeExpr),
 	},
 
 	// ------ Pointers ------
@@ -511,37 +511,37 @@ var calcEngine = e.New(e.TypeMap{
 		Copy: func(dest, from e.Ptr) {
 			*(**BinaryOp)(dest) = *(**BinaryOp)(from)
 		},
-		Elem:   e.TypeId(CalcTypeBinaryOp),
+		Elem:   e.TypeID(CalcTypeBinaryOp),
 		SizeOf: unsafe.Sizeof((*BinaryOp)(nil)),
 		Kind:   e.KindPointer,
-		TypeId: e.TypeId(CalcTypeBinaryOpPtr),
+		TypeID: e.TypeID(CalcTypeBinaryOpPtr),
 	},
 	CalcTypeCalculationPtr: {
 		Copy: func(dest, from e.Ptr) {
 			*(**Calculation)(dest) = *(**Calculation)(from)
 		},
-		Elem:   e.TypeId(CalcTypeCalculation),
+		Elem:   e.TypeID(CalcTypeCalculation),
 		SizeOf: unsafe.Sizeof((*Calculation)(nil)),
 		Kind:   e.KindPointer,
-		TypeId: e.TypeId(CalcTypeCalculationPtr),
+		TypeID: e.TypeID(CalcTypeCalculationPtr),
 	},
 	CalcTypeFuncPtr: {
 		Copy: func(dest, from e.Ptr) {
 			*(**Func)(dest) = *(**Func)(from)
 		},
-		Elem:   e.TypeId(CalcTypeFunc),
+		Elem:   e.TypeID(CalcTypeFunc),
 		SizeOf: unsafe.Sizeof((*Func)(nil)),
 		Kind:   e.KindPointer,
-		TypeId: e.TypeId(CalcTypeFuncPtr),
+		TypeID: e.TypeID(CalcTypeFuncPtr),
 	},
 	CalcTypeScalarPtr: {
 		Copy: func(dest, from e.Ptr) {
 			*(**Scalar)(dest) = *(**Scalar)(from)
 		},
-		Elem:   e.TypeId(CalcTypeScalar),
+		Elem:   e.TypeID(CalcTypeScalar),
 		SizeOf: unsafe.Sizeof((*Scalar)(nil)),
 		Kind:   e.KindPointer,
-		TypeId: e.TypeId(CalcTypeScalarPtr),
+		TypeID: e.TypeID(CalcTypeScalarPtr),
 	},
 
 	// ------ Slices ------
@@ -549,20 +549,20 @@ var calcEngine = e.New(e.TypeMap{
 		Copy: func(dest, from e.Ptr) {
 			*(*[]Expr)(dest) = *(*[]Expr)(from)
 		},
-		Elem: e.TypeId(CalcTypeExpr),
+		Elem: e.TypeID(CalcTypeExpr),
 		Kind: e.KindSlice,
 		NewSlice: func(size int) e.Ptr {
 			x := make([]Expr, size)
 			return e.Ptr(&x)
 		},
 		SizeOf: unsafe.Sizeof(([]Expr)(nil)),
-		TypeId: e.TypeId(CalcTypeExprSlice),
+		TypeID: e.TypeID(CalcTypeExprSlice),
 	},
 })
 
 // These are lightweight type tokens.
 const (
-	_ CalcTypeId = iota
+	_ CalcTypeID = iota
 	CalcTypeBinaryOp
 	CalcTypeBinaryOpPtr
 	CalcTypeCalc
@@ -577,6 +577,6 @@ const (
 )
 
 // String is for debugging use only.
-func (t CalcTypeId) String() string {
-	return calcEngine.Stringify(e.TypeId(t))
+func (t CalcTypeID) String() string {
+	return calcEngine.Stringify(e.TypeID(t))
 }

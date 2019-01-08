@@ -13,9 +13,18 @@
 // permissions and limitations under the License. See the AUTHORS file
 // for names of contributors.
 
+// Package gen contains the implementation of the walkabout code generator.
 package gen
 
-import "github.com/spf13/cobra"
+import (
+	"fmt"
+	"runtime"
+
+	"github.com/spf13/cobra"
+)
+
+// buildID is set by a linker flag.
+var buildID = "dev"
 
 // Main is the entry point for the walkabout tool.  It is invoked from
 // a main() method in the top-level walkabout package.
@@ -65,6 +74,15 @@ implement the --union interface. Only valid when using --union.`)
 	rootCmd.Flags().StringVarP(&config.union, "union", "u", "",
 		`generate a new interface with the given name to be used as the
 visitable interface.`)
+
+	rootCmd.AddCommand(
+		&cobra.Command{
+			Use:   "version",
+			Short: "print version information",
+			Run: func(cmd *cobra.Command, args []string) {
+				fmt.Printf("walkabout version %s; %s", buildID, runtime.Version())
+			},
+		})
 
 	return rootCmd.Execute()
 }

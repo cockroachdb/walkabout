@@ -23,10 +23,10 @@ import (
 	"github.com/pkg/errors"
 )
 
-// TypeId is a constant string to be emitted in the generated code.
-type TypeId string
+// TypeID is a constant string to be emitted in the generated code.
+type TypeID string
 
-func (s TypeId) String() string { return string(s) }
+func (s TypeID) String() string { return string(s) }
 
 // SourceName is the name of a type as it appears in the input source.
 type SourceName string
@@ -50,7 +50,7 @@ type visitation struct {
 	// The root visitable interface.
 	Root namedInterfaceType
 	// types collects all referenced types, indexed by their type id.
-	Types       map[TypeId]visitableType
+	Types       map[TypeID]visitableType
 	SourceTypes map[SourceName]visitableType
 }
 
@@ -130,24 +130,24 @@ func (v *visitation) populateGeneratedTypes(scopes []*types.Scope) {
 	}
 }
 
-// ensureTypeId ensures that the types map contains an entry
+// ensureTypeID ensures that the types map contains an entry
 // for the given type.
-func (v *visitation) ensureTypeId(i visitableType) TypeId {
-	ret := v.typeId(i)
+func (v *visitation) ensureTypeID(i visitableType) TypeID {
+	ret := v.typeID(i)
 	if _, found := v.Types[ret]; !found {
 		v.Types[ret] = i
 	}
 	return ret
 }
 
-// typeId generates a reasonable description of a type. Generated tokens
+// typeID generates a reasonable description of a type. Generated tokens
 // are attached to the underlying visitation so that we can be sure
 // to actually generate them in a subsequent pass.
 //   *Foo -> FooPtr
 //   []Foo -> FooSlice
 //   []*Foo -> FooPtrSlice
 //   *[]Foo -> FooSlicePtr
-func (v *visitation) typeId(i visitableType) TypeId {
+func (v *visitation) typeID(i visitableType) TypeID {
 	suffix := ""
 	for {
 		switch t := i.(type) {
@@ -160,7 +160,7 @@ func (v *visitation) typeId(i visitableType) TypeId {
 		case namedVisitableType:
 			i = t.Underlying
 		default:
-			return TypeId(fmt.Sprintf("%sType%s%s", v.Root, t, suffix))
+			return TypeID(fmt.Sprintf("%sType%s%s", v.Root, t, suffix))
 		}
 	}
 }
@@ -210,7 +210,7 @@ func (v *visitation) visitableType(typ types.Type, isReachable bool) (visitableT
 					v:      v,
 				}
 				v.SourceTypes[sourceName] = ret
-				v.ensureTypeId(ret)
+				v.ensureTypeID(ret)
 				ret.Fields()
 				return ret, true
 			}
@@ -234,7 +234,7 @@ func (v *visitation) visitableType(typ types.Type, isReachable bool) (visitableT
 					v:         v,
 				}
 				v.SourceTypes[sourceName] = ret
-				v.ensureTypeId(ret)
+				v.ensureTypeID(ret)
 
 				// If we've added an interface because it's reachable, we need
 				// to also go back and look for any structs that may be implied

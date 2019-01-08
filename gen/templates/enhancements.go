@@ -25,7 +25,7 @@ func init() {
 {{- $NumChildren := T $v "Count" -}}
 {{- $identify := t $v "Identify" -}}
 {{- $Root := $v.Root -}}
-{{- $TypeId := T $v "TypeId" -}}
+{{- $TypeID := T $v "TypeID" -}}
 {{- $WalkerFn := T $v "WalkerFn" -}}
 {{- $wrap := t $v "Wrap" -}}
 
@@ -43,10 +43,10 @@ func (a *{{ $abstract }}) {{ $ChildAt }}(index int) (ret {{ $Abstract }}) {
 	if impl == nil {
 		return nil
 	}
-	switch {{ $TypeId }}(impl.TypeId()) {
+	switch {{ $TypeID }}(impl.TypeID()) {
 	{{ range $s := Structs $v -}}
-	case {{ TypeId $s }}: ret = (*{{ $s }})(impl.Ptr());
-	case {{ TypeId $s }}Ptr: ret = *(**{{ $s }})(impl.Ptr());
+	case {{ TypeID $s }}: ret = (*{{ $s }})(impl.Ptr());
+	case {{ TypeID $s }}Ptr: ret = *(**{{ $s }})(impl.Ptr());
 	{{- end }}
 	default:
 		ret = &{{ $abstract}}{impl}
@@ -59,28 +59,28 @@ func (a *{{ $abstract }}) {{ $NumChildren }} () int {
 	return a.delegate.NumChildren()
 }
 
-// {{ $TypeId }} implements {{ $Abstract }}.
-func (a *{{ $abstract }}) {{ $TypeId }}() {{ $TypeId }} {
-	return {{ $TypeId }}(a.delegate.TypeId())
+// {{ $TypeID }} implements {{ $Abstract }}.
+func (a *{{ $abstract }}) {{ $TypeID }}() {{ $TypeID }} {
+	return {{ $TypeID }}(a.delegate.TypeID())
 }
 
 {{ range $s := Structs $v }}
 // {{ $ChildAt }} implements {{ $Abstract }}.
 func (x *{{ $s }}) {{ $ChildAt }}(index int) {{ $Abstract }} {
-	self := {{ $abstract }}{ {{ $Engine }}.Abstract(e.TypeId({{ TypeId $s }}), e.Ptr(x)) }
+	self := {{ $abstract }}{ {{ $Engine }}.Abstract(e.TypeID({{ TypeID $s }}), e.Ptr(x)) }
 	return self.{{ $ChildAt }}(index)
 }
 
 // {{ $NumChildren }} returns {{ len $s.Fields }}.
 func (x *{{ $s }}) {{ $NumChildren }}() int { return {{ len $s.Fields }} }
 
-// {{ $TypeId }} returns {{ TypeId $s }}.
-func (*{{ $s }}) {{ $TypeId }}() {{ $TypeId }} { return {{ TypeId $s }} }
+// {{ $TypeID }} returns {{ TypeID $s }}.
+func (*{{ $s }}) {{ $TypeID }}() {{ $TypeID }} { return {{ TypeID $s }} }
 
 // Walk{{ $Root }} visits the receiver with the provided callback. 
 func (x *{{ $s }}) Walk{{ $Root }}(fn {{ $WalkerFn }}) (_ *{{ $s }}, changed bool, err error) {
 	var y e.Ptr
-	_, y, changed, err = {{ $Engine }}.Execute(fn, e.TypeId({{ TypeId $s }}), e.Ptr(x), e.TypeId({{ TypeId $s }}))
+	_, y, changed, err = {{ $Engine }}.Execute(fn, e.TypeID({{ TypeID $s }}), e.Ptr(x), e.TypeID({{ TypeID $s }}))
 	if err != nil {
 		return nil, false, err
 	}
@@ -91,7 +91,7 @@ func (x *{{ $s }}) Walk{{ $Root }}(fn {{ $WalkerFn }}) (_ *{{ $s }}, changed boo
 // Walk{{ $Root }} visits the receiver with the provided callback. 
 func Walk{{ $Root }}(x {{ $Root }}, fn {{ $WalkerFn }}) (_ {{ $Root }}, changed bool, err error) {
   id, ptr := {{ $identify }}(x)
-	id, ptr, changed, err = {{ $Engine }}.Execute(fn, id, ptr, e.TypeId({{ TypeId $Root }}))
+	id, ptr, changed, err = {{ $Engine }}.Execute(fn, id, ptr, e.TypeID({{ TypeID $Root }}))
 	if err != nil {
 		return nil, false, err
 	}

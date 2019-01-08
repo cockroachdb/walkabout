@@ -26,13 +26,13 @@ func init() {
 {{- $identify := t $v "Identify" -}}
 {{- $NumChildren := T $v "Count" -}}
 {{- $Root := $v.Root -}}
-{{- $TypeId := T $v "TypeId " -}}
+{{- $TypeID := T $v "TypeID" -}}
 {{- $WalkerFn := T $v "WalkerFn" -}}
 {{- $wrap := t $v "Wrap" -}}
 // ------ API and public types ------
 
-// {{ $TypeId }} is a lightweight type token.
-type {{ $TypeId }} e.TypeId
+// {{ $TypeID }} is a lightweight type token.
+type {{ $TypeID }} e.TypeID
 
 // {{ $Abstract }} allows users to treat a {{ $Root }} as an abstract
 // tree of nodes. All visitable struct types will have generated methods
@@ -48,8 +48,8 @@ type {{ $Abstract }} interface {
 	// {{ $NumChildren }} returns the number of visitable fields in a struct,
 	// or the length of a slice.
 	{{ $NumChildren }}() int
-	// {{ $TypeId }} returns a type token.
-	{{ $TypeId }}() {{ $TypeId }}
+	// {{ $TypeID }} returns a type token.
+	{{ $TypeID }}() {{ $TypeID }}
 }
 
 var (
@@ -146,11 +146,11 @@ func (d {{ $Decision }}) Replace(x {{ $Root }}) {{ $Decision }} {
 
 // {{ $identify }} is a utility function to map a {{ $Root }} into
 // its generated type id and a pointer to the data. 
-func {{ $identify }}(x {{ $Root }}) (typeId e.TypeId, data e.Ptr) {
+func {{ $identify }}(x {{ $Root }}) (typeId e.TypeID, data e.Ptr) {
 	switch t := x.(type) {
 		{{ range $imp := Implementors $Root -}}
 		case {{ $imp.Actual }}:
-			typeId = e.TypeId({{ TypeId $imp.Underlying }});
+			typeId = e.TypeID({{ TypeID $imp.Underlying }});
 			{{ if IsPointer $imp.Actual }}data = e.Ptr(t);
 			{{ else }}data = e.Ptr(&t);
 			{{ end }}
@@ -166,17 +166,17 @@ func {{ $identify }}(x {{ $Root }}) (typeId e.TypeId, data e.Ptr) {
 
 // {{ $wrap }} is a utility function to reconstitute a {{ $Root }}
 // from an internal type token and a pointer to the value.
-func {{ $wrap }}(typeId e.TypeId, x e.Ptr) {{ $Root }} {
-	switch {{ $TypeId }}(typeId) {
+func {{ $wrap }}(typeId e.TypeID, x e.Ptr) {{ $Root }} {
+	switch {{ $TypeID }}(typeId) {
 	{{ range $imp := Implementors $Root -}}
 		{{- if IsPointer $imp.Actual -}}
-			case {{ TypeId $imp.Actual.Elem }}: return (*{{ $imp.Actual.Elem }})(x);
-			case {{ TypeId $imp.Actual }}: return *(*{{ $imp.Actual }})(x);
+			case {{ TypeID $imp.Actual.Elem }}: return (*{{ $imp.Actual.Elem }})(x);
+			case {{ TypeID $imp.Actual }}: return *(*{{ $imp.Actual }})(x);
 		{{- end -}}
 	{{- end }}
 	default:
 		// This is likely a code-generation problem.
-		panic(fmt.Sprintf("unhandled TypeId: %d", typeId))
+		panic(fmt.Sprintf("unhandled TypeID %d", typeId))
 	}
 }
 
@@ -186,7 +186,7 @@ type {{ $Action }} e.Action
 
 // ActionVisit constructs a {{ $Action }} that will visit the given value.
 func (c *{{ $Context }}) ActionVisit(x {{ $Root }}) {{ $Action }} {
-	return {{ $Action }} (c.impl.ActionVisitTypeId({{ $identify }}(x)))
+	return {{ $Action }} (c.impl.ActionVisitTypeID({{ $identify }}(x)))
 }
 
 // ActionCall constructs a {{ $Action }} that will invoke the given callback.

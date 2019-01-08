@@ -17,15 +17,6 @@ package gen
 
 import "go/types"
 
-// refMode captures the notion of a by-reference or by-value
-// receiver type.
-type refMode int
-
-const (
-	byValue refMode = iota
-	byRef
-)
-
 // visitableType represents a type that we can generate visitation logic
 // around:
 //	* a named struct which implements the visitable interface,
@@ -155,26 +146,26 @@ func (t namedStruct) Implementation() visitableType {
 }
 
 // String is codegen-safe.
-func (i namedStruct) String() string {
-	return i.Obj().Name()
+func (t namedStruct) String() string {
+	return t.Obj().Name()
 }
 
 // Fields returns the visitable fields of the struct.
-func (i namedStruct) Fields() []fieldInfo {
-	ret := make([]fieldInfo, 0, i.NumFields())
+func (t namedStruct) Fields() []fieldInfo {
+	ret := make([]fieldInfo, 0, t.NumFields())
 
-	for a, j := 0, i.NumFields(); a < j; a++ {
-		f := i.Field(a)
+	for a, j := 0, t.NumFields(); a < j; a++ {
+		f := t.Field(a)
 		// Ignore un-exported fields.
 		if !f.Exported() {
 			continue
 		}
 
 		// Look up `field Something` to visitableType.
-		if found, ok := i.v.visitableType(f.Type(), true); ok {
+		if found, ok := t.v.visitableType(f.Type(), true); ok {
 			ret = append(ret, fieldInfo{
 				Name:   f.Name(),
-				Parent: &i,
+				Parent: &t,
 				Target: found,
 			})
 		}
@@ -184,14 +175,13 @@ func (i namedStruct) Fields() []fieldInfo {
 }
 
 // Visitation implements visitableType.
-func (i namedStruct) Visitation() *visitation {
-	return i.v
+func (t namedStruct) Visitation() *visitation {
+	return t.v
 }
 
 type unionInterface struct {
-	name  string
-	intfs []visitableType
-	v     *visitation
+	name string
+	v    *visitation
 }
 
 // Implementation returns the receiver.

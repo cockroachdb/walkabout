@@ -20,50 +20,50 @@ func init() {
 {{- $v := . -}}
 {{- $Context := T $v "Context" -}}
 {{- $Engine := t $v "Engine" -}}
-{{- $TypeId := T $v "TypeId" -}}
+{{- $TypeID := T $v "TypeID" -}}
 {{- $WalkerFn := T $v "WalkerFn" -}}
 // ------ Type Mapping ------
 var {{ $Engine }} = e.New(e.TypeMap {
 // ------ Structs ------
-{{ range $s := Structs $v }}{{ TypeId $s }}: {
+{{ range $s := Structs $v }}{{ TypeID $s }}: {
 	Copy: func(dest, from e.Ptr) { *(*{{ $s }})(dest) = *(*{{ $s }})(from) },
 	Facade: func(impl e.Context, fn e.FacadeFn, x e.Ptr) e.Decision {
 		return e.Decision(fn.({{ $WalkerFn }})({{ $Context }}{impl}, (*{{ $s }})(x)))
 	},
 	Fields: []e.FieldInfo {
 		{{ range $f := $s.Fields -}}
-		{ Name: "{{ $f }}", Offset: unsafe.Offsetof({{ $s }}{}.{{ $f }}), Target: e.TypeId({{ TypeId $f.Target }})},
+		{ Name: "{{ $f }}", Offset: unsafe.Offsetof({{ $s }}{}.{{ $f }}), Target: e.TypeID({{ TypeID $f.Target }})},
 		{{ end }}
 	},
 	Name: "{{ $s }}",
 	NewStruct: func() e.Ptr { return e.Ptr(&{{ $s }}{}) },
 	SizeOf: unsafe.Sizeof({{ $s }}{}),
 	Kind: e.KindStruct,
-	TypeId: e.TypeId({{ TypeId $s }}),
+	TypeID: e.TypeID({{ TypeID $s }}),
 },
 {{ end }}
 // ------ Interfaces ------
-{{ range $s := Intfs $v }}{{ TypeId $s }}: {
+{{ range $s := Intfs $v }}{{ TypeID $s }}: {
 	Copy: func(dest, from e.Ptr) {
 		*(*{{ $s }})(dest) = *(*{{ $s }})(from)
 	},
-	IntfType: func(x e.Ptr) e.TypeId {
+	IntfType: func(x e.Ptr) e.TypeID {
 		d := *(*{{ $s }})(x)
 		switch d.(type) {
 		{{ range $imp := Implementors $s -}}
-		case {{ $imp.Actual }}: return e.TypeId({{ TypeId $imp.Underlying }});
+		case {{ $imp.Actual }}: return e.TypeID({{ TypeID $imp.Underlying }});
 		{{- end }}
 		default:
 			return 0
 		}
 	},
-	IntfWrap: func(id e.TypeId, x e.Ptr) e.Ptr {
+	IntfWrap: func(id e.TypeID, x e.Ptr) e.Ptr {
 		var d {{ $s }}
-		switch {{ $TypeId }}(id) {
+		switch {{ $TypeID }}(id) {
 		{{ range $imp := Implementors $s -}}
 			{{- if IsPointer $imp.Actual -}}
-				case {{ TypeId $imp.Actual.Elem }}: d = (*{{ $imp.Actual.Elem }})(x);
-				case {{ TypeId $imp.Actual }}: d = *(*{{ $imp.Actual }})(x);
+				case {{ TypeID $imp.Actual.Elem }}: d = (*{{ $imp.Actual.Elem }})(x);
+				case {{ TypeID $imp.Actual }}: d = *(*{{ $imp.Actual }})(x);
 			{{- end -}}
 		{{- end }}
 		default:
@@ -74,46 +74,46 @@ var {{ $Engine }} = e.New(e.TypeMap {
 	Kind: e.KindInterface,
 	Name: "{{ $s }}",
 	SizeOf: unsafe.Sizeof({{ $s }}(nil)),
-	TypeId: e.TypeId({{ TypeId $s }}),
+	TypeID: e.TypeID({{ TypeID $s }}),
 },
 {{ end }}
 // ------ Pointers ------
-{{ range $s := Pointers $v }}{{ TypeId $s }}: {
+{{ range $s := Pointers $v }}{{ TypeID $s }}: {
 	Copy: func(dest, from e.Ptr) {
 		*(*{{ $s }})(dest) = *(*{{ $s }})(from)
 	},
-	Elem: e.TypeId({{ TypeId $s.Elem }}),
+	Elem: e.TypeID({{ TypeID $s.Elem }}),
 	SizeOf: unsafe.Sizeof(({{ $s }})(nil)),
 	Kind: e.KindPointer,
-	TypeId: e.TypeId({{ TypeId $s }}),
+	TypeID: e.TypeID({{ TypeID $s }}),
 },
 {{ end }}
 // ------ Slices ------
-{{ range $s := Slices $v }}{{ TypeId $s }}: {
+{{ range $s := Slices $v }}{{ TypeID $s }}: {
 	Copy: func(dest, from e.Ptr) {
 		*(*{{ $s }})(dest) = *(*{{ $s }})(from)
 	},
-	Elem: e.TypeId({{ TypeId $s.Elem }}),
+	Elem: e.TypeID({{ TypeID $s.Elem }}),
 	Kind: e.KindSlice,
 	NewSlice: func(size int) e.Ptr {
 		x := make({{ $s }}, size)
 		return e.Ptr(&x)
 	},
 	SizeOf: unsafe.Sizeof(({{ $s }})(nil)),
-	TypeId: e.TypeId({{ TypeId $s }}),
+	TypeID: e.TypeID({{ TypeID $s }}),
 },
 {{ end }}
 })
 
 // These are lightweight type tokens. 
 const (
-	_ {{ T $v "TypeId" }} = iota
-{{ range $t := $v.Types }}{{ TypeId $t }};{{ end }}
+	_ {{ T $v "TypeID" }} = iota
+{{ range $t := $v.Types }}{{ TypeID $t }};{{ end }}
 )
 
 // String is for debugging use only.
-func (t {{ $TypeId }}) String() string {
-	return {{ $Engine }}.Stringify(e.TypeId(t))
+func (t {{ $TypeID }}) String() string {
+	return {{ $Engine }}.Stringify(e.TypeID(t))
 }
 `
 }

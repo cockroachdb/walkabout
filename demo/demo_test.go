@@ -33,7 +33,7 @@ func Example_abstract() {
 		if child == nil {
 			fmt.Printf("%d: nil\n", i)
 		} else {
-			fmt.Printf("%d: %s %s\n", i, child.TargetTypeId(), reflect.TypeOf(child))
+			fmt.Printf("%d: %s %s\n", i, child.TargetTypeID(), reflect.TypeOf(child))
 		}
 	}
 

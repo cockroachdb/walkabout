@@ -18,6 +18,8 @@ package demo
 
 import "github.com/cockroachdb/walkabout/demo/other"
 
+//lint:file-ignore U1000 Ignore code for demos.
+//go:generate -command walkabout go run ..
 //go:generate walkabout Target
 
 // Target is a base interface that we run the code-generator against.
@@ -72,11 +74,11 @@ type ignoredType struct{}
 // Value implements the Target interface.
 func (ignoredType) Value() string { return "Should never see this" }
 
-// This type will be included in --union --reachable mode. It doesn't
+// ReachableType will be included in --union --reachable mode. It doesn't
 // implement the Target interface, but it is a field in ContainerType.
 type ReachableType struct{}
 
-// This type isn't reachable from any type that implements Target,
+// NeverType isn't reachable from any type that implements Target,
 // so it will never be generated.
 type NeverType struct{}
 
@@ -86,6 +88,7 @@ type Unionable interface {
 	isUnionable()
 }
 
+// UnionableType will be included only when in --union mode.
 type UnionableType struct{}
 
 func (UnionableType) isUnionable() {}
@@ -127,7 +130,7 @@ type ContainerType struct {
 	// Unexported types aren't generated.
 	Ignored *ignoredType
 
-	// This field will be generated one when in --union mode.
+	// This field will be generated only when in --union mode.
 	UnionableType *UnionableType
 
 	/// This field will only be visited when in --union --reachable mode.
@@ -158,17 +161,15 @@ func NewContainer(useValuePtrs bool) (*ContainerType, int) {
 	embedsTarget := func() EmbedsTarget {
 		if useValuePtrs {
 			return &ByValType{olleh()}
-		} else {
-			return ByValType{olleh()}
 		}
+		return ByValType{olleh()}
 	}
 
 	target := func() Target {
 		if useValuePtrs {
 			return &ByValType{olleh()}
-		} else {
-			return ByValType{olleh()}
 		}
+		return ByValType{olleh()}
 	}
 
 	p1 := target()

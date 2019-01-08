@@ -139,9 +139,9 @@ var funcMap = template.FuncMap{
 	"T": func(v *visitation, name string) string {
 		return fmt.Sprintf("%s%s", v.Root, name)
 	},
-	// TypeId generates a reasonable description of a type.
-	"TypeId": func(t visitableType) TypeId {
-		return t.Visitation().ensureTypeId(t)
+	// TypeID generates a reasonable description of a type.
+	"TypeID": func(t visitableType) TypeID {
+		return t.Visitation().ensureTypeID(t)
 	},
 }
 

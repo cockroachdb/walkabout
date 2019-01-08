@@ -56,9 +56,8 @@ func (f *frame) Active() *Action {
 func (f *frame) Slot(idx int) *Action {
 	if idx < fixedSlotCount {
 		return &f.Slots[idx]
-	} else {
-		return &f.Overflow[idx-fixedSlotCount]
 	}
+	return &f.Overflow[idx-fixedSlotCount]
 }
 
 // SetSlot is a helper function to configure a slot.
@@ -89,18 +88,18 @@ func New(m TypeMap) *Engine {
 	for idx, td := range e.typeMap {
 		if td.Elem != 0 {
 			found := e.typeData(td.Elem)
-			if found.TypeId == 0 {
+			if found.TypeID == 0 {
 				panic(fmt.Errorf("bad codegen: missing %d.Elem %d",
-					td.TypeId, td.Elem))
+					td.TypeID, td.Elem))
 			}
 			e.typeMap[idx].elemData = found
 		}
 
 		for fIdx, field := range td.Fields {
 			found := e.typeData(field.Target)
-			if found.TypeId == 0 {
+			if found.TypeID == 0 {
 				panic(fmt.Errorf("bad codegen: missing %d.%s.Target %d",
-					td.TypeId, field.Name, field.Target))
+					td.TypeID, field.Name, field.Target))
 			}
 			e.typeMap[idx].Fields[fIdx].targetData = found
 		}
@@ -109,13 +108,13 @@ func New(m TypeMap) *Engine {
 }
 
 // Abstract constructs an abstract accessor around a struct's field.
-func (e *Engine) Abstract(typeId TypeId, x Ptr) *Abstract {
+func (e *Engine) Abstract(typeID TypeID, x Ptr) *Abstract {
 	if x == nil {
 		return nil
 	}
 	return &Abstract{
 		engine:   e,
-		typeData: e.typeData(typeId),
+		typeData: e.typeData(typeID),
 		value:    x,
 	}
 }
@@ -124,10 +123,10 @@ func (e *Engine) Abstract(typeId TypeId, x Ptr) *Abstract {
 // recursive" function that maintains its own stack to avoid
 // deeply-nested call stacks. We can also perform cycle-detection at
 // fairly low cost. Any replacement of the top-level value must be
-// assignable to the given TypeId.
+// assignable to the given TypeID.
 func (e *Engine) Execute(
-	fn FacadeFn, t TypeId, x Ptr, assignableTo TypeId,
-) (retType TypeId, ret Ptr, changed bool, err error) {
+	fn FacadeFn, t TypeID, x Ptr, assignableTo TypeID,
+) (retType TypeID, ret Ptr, changed bool, err error) {
 	ctx := Context{}
 	stack := make([]frame, defaultStackDepth)
 
@@ -186,7 +185,7 @@ enter:
 	// first field of a struct to be exactly the struct type.
 	for l := 0; l < stackIdx; l++ {
 		onStack := stack[l].Active()
-		if onStack.value == curSlot.value && onStack.typeData.TypeId == curSlot.typeData.TypeId {
+		if onStack.value == curSlot.value && onStack.typeData.TypeID == curSlot.typeData.TypeID {
 			goto nextSlot
 		}
 	}
@@ -279,7 +278,7 @@ enter:
 	case KindInterface:
 		// An interface is a type-tag and a pointer.
 		ptr := (*[2]Ptr)(curSlot.value)[1]
-		// We do need to map the type-tag to our TypeId.
+		// We do need to map the type-tag to our TypeID.
 		// Perhaps this could be accomplished with a map?
 		elem := curSlot.typeData.IntfType(curSlot.value)
 		// Need to check elem==0 in the case of a "typed nil" value.
@@ -364,7 +363,7 @@ unwind:
 		case KindInterface:
 			// Swap out the iface pointer just like the pointer case above.
 			next := returning.Zero()
-			curSlot.value = curSlot.typeData.IntfWrap(next.typeData.TypeId, next.value)
+			curSlot.value = curSlot.typeData.IntfWrap(next.typeData.TypeID, next.value)
 
 		default:
 			panic(fmt.Errorf("unimplemented: %d", curSlot.typeData.Kind))
@@ -383,7 +382,7 @@ nextSlot:
 			// pprof says that this is measurably faster than repeatedly
 			// dereferencing the pointer.
 			z := *curFrame.Zero()
-			return z.typeData.TypeId, z.value, z.dirty, nil
+			return z.typeData.TypeID, z.value, z.dirty, nil
 		}
 		// Save off the current frame so we can copy the data out.
 		returning = curFrame
@@ -405,7 +404,7 @@ nextSlot:
 
 // Stringify returns a string representation of the given type that
 // is suitable for debugging purposes.
-func (e *Engine) Stringify(id TypeId) string {
+func (e *Engine) Stringify(id TypeID) string {
 	if id == 0 {
 		return "<NIL>"
 	}
@@ -432,6 +431,6 @@ func (e *Engine) Stringify(id TypeId) string {
 }
 
 // typeData returns a pointer to the TypeData for the given type.
-func (e *Engine) typeData(id TypeId) *TypeData {
+func (e *Engine) typeData(id TypeID) *TypeData {
 	return &e.typeMap[id]
 }

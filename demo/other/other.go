@@ -17,13 +17,14 @@
 // other packages.
 package other
 
-// This type is reachable from our Container type, but we can't
+// Reachable is reachable from our Container type, but we can't
 // do anything to make it implement a common interface (unless
 // we want the generator to start writing into multiple output
 // directories in a single pass, which seems fraught).
 type Reachable struct{}
 
-// This type is in another package, so it's not eligible for inclusion.
+// Implementor implements demo.Target, but since it's in another
+// package, it's not eligible for inclusion.
 type Implementor struct {
 	val string
 }

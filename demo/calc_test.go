@@ -24,6 +24,7 @@ import (
 // This generation flow will find all types in this package that
 // are reachable from the Calculation struct and create a
 // Calc interface to unify them.
+//go:generate -command walkabout go run ..
 //go:generate walkabout --union Calc --reachable Calculation
 
 // This example shows a toy calculator AST and how custom actions can be

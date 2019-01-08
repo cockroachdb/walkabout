@@ -67,9 +67,8 @@ func newGeneration(cfg config) (*generation, error) {
 		writeCloser: func(name string) (io.WriteCloser, error) {
 			if name == "-" {
 				return os.Stdout, nil
-			} else {
-				return os.OpenFile(name, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
 			}
+			return os.OpenFile(name, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
 		},
 	}, nil
 }
@@ -91,7 +90,7 @@ func (g *generation) Execute() error {
 		gen:              g,
 		includeReachable: g.config.reachable,
 		packagePath:      pkgs[0].PkgPath,
-		Types:            make(map[TypeId]visitableType),
+		Types:            make(map[TypeID]visitableType),
 		SourceTypes:      make(map[SourceName]visitableType),
 	}
 	g.visitation = v

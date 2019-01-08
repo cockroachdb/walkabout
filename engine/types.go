@@ -22,10 +22,10 @@ import (
 	"unsafe"
 )
 
-// A TypeId is an opaque reference to a visitable type. These are
+// A TypeID is an opaque reference to a visitable type. These are
 // assigned by the code-generator and their specific values and order
 // are arbitrary.
-type TypeId int
+type TypeID int
 
 // A TypeMap holds the necessary metadata to visit a collection of types.
 type TypeMap []TypeData
@@ -59,24 +59,24 @@ type TypeData struct {
 	// Copy will effect a type aware copy of the data at from to dest.
 	Copy func(dest, from Ptr)
 	// Elem is the element type of a slice or of a pointer.
-	Elem TypeId
+	Elem TypeID
 	// Facade will call a user-provided facade function in a
 	// type-safe fashion.
 	Facade func(Context, FacadeFn, Ptr) Decision
 	// Fields holds information about the fields of a struct.
 	Fields []FieldInfo
 	// IntfType accepts a pointer to an interface type and returns a
-	// TypeId for the enclosed datatype.
+	// TypeID for the enclosed datatype.
 	//
 	// An interface's type-tag contains several flag bits which
 	// fall into the category of "too much magic" for us to want
 	// to handle ourselves. Instead, we generate functions which
 	// will perform the necessary type mapping.
-	IntfType func(Ptr) TypeId
+	IntfType func(Ptr) TypeID
 	// IntfWrap provides the opposite function of IntfType. It accepts
-	// a TypeId and a pointer to the interface's value and returns a
+	// a TypeID and a pointer to the interface's value and returns a
 	// pointer to the resulting interface array.
-	IntfWrap func(TypeId, Ptr) Ptr
+	IntfWrap func(TypeID, Ptr) Ptr
 	// Kind selects various strategies for handling the given type.
 	Kind Kind
 	// Name is the source name of the type.
@@ -90,18 +90,18 @@ type TypeData struct {
 	// slices. It could be expanded in the future to generalizing the
 	// Copy() function.
 	SizeOf uintptr
-	// TypeId is a generated id.
-	TypeId TypeId
+	// TypeID is a generated id.
+	TypeID TypeID
 
 	// This field is populated when an Engine is constructed.
 	elemData *TypeData
 }
 
-// FieldInto describes a field within a struct.
+// FieldInfo describes a field within a struct.
 type FieldInfo struct {
 	Name   string
 	Offset uintptr
-	Target TypeId
+	Target TypeID
 
 	// This field is populated when an Engine is constructed.
 	targetData *TypeData
@@ -117,11 +117,11 @@ func (Context) ActionCall(fn ActionFn) Action {
 
 // ActionVisit constructs an action which will visit the given value.
 func (Context) ActionVisit(td *TypeData, value Ptr) Action {
-	return Action{typeData: td, value: value, valueType: td.TypeId}
+	return Action{typeData: td, value: value, valueType: td.TypeID}
 }
 
-// ActionVisitTypeId constructs an action which will visit the given value.
-func (Context) ActionVisitTypeId(id TypeId, value Ptr) Action {
+// ActionVisitTypeID constructs an action which will visit the given value.
+func (Context) ActionVisitTypeID(id TypeID, value Ptr) Action {
 	return Action{value: value, valueType: id}
 }
 
@@ -158,7 +158,7 @@ type Decision struct {
 	intercept       FacadeFn
 	post            FacadeFn
 	replacement     Ptr
-	replacementType TypeId
+	replacementType TypeID
 	skip            bool
 }
 
@@ -175,7 +175,7 @@ func (d Decision) Post(fn FacadeFn) Decision {
 }
 
 // Replace is for use by generated code only.
-func (d Decision) Replace(id TypeId, x Ptr) Decision {
+func (d Decision) Replace(id TypeID, x Ptr) Decision {
 	d.replacement = x
 	d.replacementType = id
 	return d
@@ -189,7 +189,7 @@ type Action struct {
 	post      FacadeFn
 	typeData  *TypeData
 	value     Ptr
-	valueType TypeId
+	valueType TypeID
 }
 
 // apply updates the action with information from a decision.
@@ -201,7 +201,7 @@ func (a *Action) apply(e *Engine, d Decision, assignableTo *TypeData) error {
 		a.post = d.post
 	}
 	if d.replacement != nil {
-		if a.typeData.TypeId != d.replacementType {
+		if a.typeData.TypeID != d.replacementType {
 			// The user can only change the type of the object if it's being
 			// assigned to an interface slot. Even then, we'll want to
 			// check the assignability.
@@ -209,13 +209,13 @@ func (a *Action) apply(e *Engine, d Decision, assignableTo *TypeData) error {
 				if assignableTo.IntfWrap(d.replacementType, d.replacement) == nil {
 					return fmt.Errorf(
 						"type %s is unknown or not assignable to %s",
-						e.Stringify(d.replacementType), e.Stringify(assignableTo.TypeId))
+						e.Stringify(d.replacementType), e.Stringify(assignableTo.TypeID))
 				}
 				a.typeData = e.typeData(d.replacementType)
 			} else {
 				return fmt.Errorf(
 					"cannot change type of %s to %s",
-					e.Stringify(assignableTo.TypeId), e.Stringify(d.replacementType))
+					e.Stringify(assignableTo.TypeID), e.Stringify(d.replacementType))
 			}
 		}
 		a.dirty = true
