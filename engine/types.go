@@ -18,6 +18,7 @@ package engine
 // This file contains various type definitions.
 
 import (
+	"errors"
 	"fmt"
 	"unsafe"
 )
@@ -120,6 +121,12 @@ func (Context) ActionVisit(td *TypeData, value Ptr) Action {
 	return Action{typeData: td, value: value, valueType: td.TypeID}
 }
 
+// ActionVisitReplace constructs an action which will visit the given
+// value and allow replacements of the given type.
+func (Context) ActionVisitReplace(td *TypeData, value Ptr, assignableTo *TypeData) Action {
+	return Action{assignableTo: assignableTo, typeData: td, value: value, valueType: td.TypeID}
+}
+
 // ActionVisitTypeID constructs an action which will visit the given value.
 func (Context) ActionVisitTypeID(id TypeID, value Ptr) Action {
 	return Action{value: value, valueType: id}
@@ -184,16 +191,17 @@ func (d Decision) Replace(id TypeID, x Ptr) Decision {
 // Action allows user-defined actions to be inserted into the
 // visitation flow.
 type Action struct {
-	call      ActionFn
-	dirty     bool
-	post      FacadeFn
-	typeData  *TypeData
-	value     Ptr
-	valueType TypeID
+	assignableTo *TypeData
+	call         ActionFn
+	dirty        bool
+	post         FacadeFn
+	typeData     *TypeData
+	value        Ptr
+	valueType    TypeID
 }
 
 // apply updates the action with information from a decision.
-func (a *Action) apply(e *Engine, d Decision, assignableTo *TypeData) error {
+func (a *Action) apply(e *Engine, d Decision) error {
 	if d.error != nil {
 		return d.error
 	}
@@ -201,21 +209,24 @@ func (a *Action) apply(e *Engine, d Decision, assignableTo *TypeData) error {
 		a.post = d.post
 	}
 	if d.replacement != nil {
+		if a.assignableTo == nil {
+			return errors.New("this value cannot be replaced")
+		}
 		if a.typeData.TypeID != d.replacementType {
 			// The user can only change the type of the object if it's being
 			// assigned to an interface slot. Even then, we'll want to
 			// check the assignability.
-			if assignableTo.Kind == KindInterface {
-				if assignableTo.IntfWrap(d.replacementType, d.replacement) == nil {
+			if a.assignableTo.Kind == KindInterface {
+				if a.assignableTo.IntfWrap(d.replacementType, d.replacement) == nil {
 					return fmt.Errorf(
 						"type %s is unknown or not assignable to %s",
-						e.Stringify(d.replacementType), e.Stringify(assignableTo.TypeID))
+						e.Stringify(d.replacementType), e.Stringify(a.assignableTo.TypeID))
 				}
 				a.typeData = e.typeData(d.replacementType)
 			} else {
 				return fmt.Errorf(
 					"cannot change type of %s to %s",
-					e.Stringify(assignableTo.TypeID), e.Stringify(d.replacementType))
+					e.Stringify(a.assignableTo.TypeID), e.Stringify(d.replacementType))
 			}
 		}
 		a.dirty = true

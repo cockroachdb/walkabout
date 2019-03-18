@@ -155,13 +155,10 @@ func (e *Engine) Execute(
 	// We save off the assignability info in this magic frame to allow
 	// callers to the top-level WalkInterface() function to write visitors
 	// which will change the concrete type of the returned value.
-	stack[0].SetSlot(e, 0, ctx.ActionVisit(e.typeData(assignableTo), nil))
-	parentSlot := stack[0].Zero()
-
-	const topIdx = 1
+	const topIdx = 0
 	stackIdx := topIdx
 	stack[topIdx].Count = 1
-	stack[topIdx].SetSlot(e, 0, ctx.ActionVisit(e.typeData(t), x))
+	stack[topIdx].SetSlot(e, 0, ctx.ActionVisitReplace(e.typeData(t), x, e.typeData(assignableTo)))
 
 	curFrame := &stack[topIdx]
 	curSlot := curFrame.Zero()
@@ -203,13 +200,13 @@ enter:
 			goto unwind
 		}
 		enter(curFrame.Intercept, 1)
-		entering.SetSlot(e, 0, ctx.ActionVisit(curSlot.typeData.elemData, ptr))
+		entering.SetSlot(e, 0, ctx.ActionVisitReplace(curSlot.typeData.elemData, ptr, curSlot.typeData.elemData))
 
 	case KindStruct:
 		// Allow parent frames to intercept child values.
 		if curFrame.Intercept != nil {
 			d := curSlot.typeData.Facade(ctx, curFrame.Intercept, curSlot.value)
-			if err := curSlot.apply(e, d, parentSlot.typeData); err != nil {
+			if err := curSlot.apply(e, d); err != nil {
 				return 0, nil, false, err
 			}
 			if d.halt {
@@ -226,7 +223,7 @@ enter:
 		// to happen.
 		d := curSlot.typeData.Facade(ctx, fn, curSlot.value)
 		// Incorporate replacements, bail on error, etc.
-		if err := curSlot.apply(e, d, parentSlot.typeData); err != nil {
+		if err := curSlot.apply(e, d); err != nil {
 			return 0, nil, false, err
 		}
 		// If the user wants to stop, we'll set the flag and just let the
@@ -258,7 +255,7 @@ enter:
 			enter(d.intercept, fieldCount)
 			for i, f := range curSlot.typeData.Fields {
 				fPtr := Ptr(uintptr(curSlot.value) + f.Offset)
-				entering.SetSlot(e, i, ctx.ActionVisit(f.targetData, fPtr))
+				entering.SetSlot(e, i, ctx.ActionVisitReplace(f.targetData, fPtr, f.targetData))
 			}
 		}
 
@@ -272,7 +269,7 @@ enter:
 		enter(curFrame.Intercept, header.Len)
 		eltTd := curSlot.typeData.elemData
 		for i, off := 0, uintptr(0); i < header.Len; i, off = i+1, off+eltTd.SizeOf {
-			entering.SetSlot(e, i, ctx.ActionVisit(eltTd, Ptr(header.Data+off)))
+			entering.SetSlot(e, i, ctx.ActionVisitReplace(eltTd, Ptr(header.Data+off), eltTd))
 		}
 
 	case KindInterface:
@@ -286,7 +283,7 @@ enter:
 			goto unwind
 		}
 		enter(curFrame.Intercept, 1)
-		entering.SetSlot(e, 0, ctx.ActionVisit(e.typeData(elem), ptr))
+		entering.SetSlot(e, 0, ctx.ActionVisitReplace(e.typeData(elem), ptr, curSlot.typeData))
 
 	default:
 		panic(fmt.Errorf("unexpected kind: %d", curSlot.typeData.Kind))
@@ -301,7 +298,6 @@ enter:
 		copy(temp, stack)
 		stack = temp
 	}
-	parentSlot = curSlot
 	curFrame = entering
 	curSlot = curFrame.Zero()
 
@@ -313,7 +309,7 @@ unwind:
 	// the same as above, although we don't respect all decision options.
 	if curSlot.post != nil {
 		d := curSlot.typeData.Facade(ctx, curSlot.post, curSlot.value)
-		if err := curSlot.apply(e, d, parentSlot.typeData); err != nil {
+		if err := curSlot.apply(e, d); err != nil {
 			return 0, nil, false, err
 		}
 		if d.halt {
@@ -324,7 +320,9 @@ unwind:
 	// If the slot reports that it's dirty, we want to propagate
 	// the changes upwards in the stack.
 	if curSlot.dirty {
-		parentSlot.dirty = true
+		if stackIdx > topIdx {
+			stack[stackIdx-1].Active().dirty = true
+		}
 
 		// This switch statement is the inverse of the above. We'll fold the
 		// returning frame into a replacement value for the current slot.
@@ -390,7 +388,6 @@ nextSlot:
 		stackIdx--
 		curFrame = &stack[stackIdx]
 		curSlot = curFrame.Active()
-		parentSlot = stack[stackIdx-1].Active()
 		// We'll jump back to the unwinding code to finish the slot of the
 		// frame which is now on top.
 		goto unwind
