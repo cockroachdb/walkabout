@@ -128,41 +128,21 @@ func (e *Engine) Execute(
 	fn FacadeFn, t TypeID, x Ptr, assignableTo TypeID,
 ) (retType TypeID, ret Ptr, changed bool, err error) {
 	ctx := Context{}
-	stack := make([]frame, defaultStackDepth)
+	stack := newStack()
+
+	// Bootstrap the stack.
+	curFrame := stack.Enter(nil, 1)
+	curSlot := curFrame.SetSlot(e, 0, ctx.ActionVisitReplace(e.typeData(t), x, e.typeData(assignableTo)))
 
 	// Entering is a temporary pointer to the frame that we might be
 	// entering into next, if the current value is a struct with fields, a
 	// slice, etc.
 	var entering *frame
-	// enter() configures the entering frame to have at least a minimum
-	// number of variable slots.
-	enter := func(intercept FacadeFn, slotCount int) {
-		entering.Count = slotCount
-		entering.Intercept = intercept
-		entering.Idx = 0
-		if slotCount > fixedSlotCount {
-			entering.Overflow = make([]Action, slotCount-fixedSlotCount)
-		}
-	}
-
+	halting := false
 	// This variable holds a pointer to a frame that we've just completed.
 	// When we have a returning frame that's dirty, we'll want to unpack
 	// its values into the current slot.
 	var returning *frame
-
-	// Bootstrap the stack. We'll add fake frame at the top of the stack
-	// so that we don't have to special-case the real top-level frame.
-	// We save off the assignability info in this magic frame to allow
-	// callers to the top-level WalkInterface() function to write visitors
-	// which will change the concrete type of the returned value.
-	const topIdx = 0
-	stackIdx := topIdx
-	stack[topIdx].Count = 1
-	stack[topIdx].SetSlot(e, 0, ctx.ActionVisitReplace(e.typeData(t), x, e.typeData(assignableTo)))
-
-	curFrame := &stack[topIdx]
-	curSlot := curFrame.Zero()
-	halting := false
 
 enter:
 	if curSlot.call != nil {
@@ -180,8 +160,8 @@ enter:
 	// to distinguish a struct from the first field of the struct. go
 	// disallows recursive type definitions, so it's impossible for the
 	// first field of a struct to be exactly the struct type.
-	for l := 0; l < stackIdx; l++ {
-		onStack := stack[l].Active()
+	for l := 0; l < stack.Depth()-1; l++ {
+		onStack := stack.Peek(l).Active()
 		if onStack.value == curSlot.value && onStack.typeData.TypeID == curSlot.typeData.TypeID {
 			goto nextSlot
 		}
@@ -190,7 +170,6 @@ enter:
 	// In this switch statement, we're going to set up the next frame. If
 	// the current value doesn't need a new frame to be pushed, we'll jump
 	// into the unwind block.
-	entering = &stack[stackIdx+1]
 	switch curSlot.typeData.Kind {
 	case KindPointer:
 		// We dereference the pointer and push the resulting memory
@@ -199,7 +178,7 @@ enter:
 		if ptr == nil {
 			goto unwind
 		}
-		enter(curFrame.Intercept, 1)
+		entering = stack.Enter(curFrame.Intercept, 1)
 		entering.SetSlot(e, 0, ctx.ActionVisitReplace(curSlot.typeData.elemData, ptr, curSlot.typeData.elemData))
 
 	case KindStruct:
@@ -243,7 +222,7 @@ enter:
 			if len(d.actions) == 0 {
 				goto unwind
 			}
-			enter(d.intercept, len(d.actions))
+			entering = stack.Enter(d.intercept, len(d.actions))
 			for i, a := range d.actions {
 				entering.SetSlot(e, i, a)
 			}
@@ -252,7 +231,7 @@ enter:
 			if fieldCount == 0 {
 				goto unwind
 			}
-			enter(d.intercept, fieldCount)
+			entering = stack.Enter(d.intercept, fieldCount)
 			for i, f := range curSlot.typeData.Fields {
 				fPtr := Ptr(uintptr(curSlot.value) + f.Offset)
 				entering.SetSlot(e, i, ctx.ActionVisitReplace(f.targetData, fPtr, f.targetData))
@@ -266,7 +245,7 @@ enter:
 		if header.Len == 0 {
 			goto unwind
 		}
-		enter(curFrame.Intercept, header.Len)
+		entering = stack.Enter(curFrame.Intercept, header.Len)
 		eltTd := curSlot.typeData.elemData
 		for i, off := 0, uintptr(0); i < header.Len; i, off = i+1, off+eltTd.SizeOf {
 			entering.SetSlot(e, i, ctx.ActionVisitReplace(eltTd, Ptr(header.Data+off), eltTd))
@@ -282,22 +261,13 @@ enter:
 		if elem == 0 || ptr == nil {
 			goto unwind
 		}
-		enter(curFrame.Intercept, 1)
+		entering = stack.Enter(curFrame.Intercept, 1)
 		entering.SetSlot(e, 0, ctx.ActionVisitReplace(e.typeData(elem), ptr, curSlot.typeData))
 
 	default:
 		panic(fmt.Errorf("unexpected kind: %d", curSlot.typeData.Kind))
 	}
 
-	// TODO(bob): Be able to fork off to visit the slots in parallel
-	// on a per-node basis.
-	stackIdx++
-	// We want the extra -1 here to maintain an offset for enter().
-	if stackIdx == len(stack)-1 {
-		temp := make([]frame, 3*len(stack)/2+1)
-		copy(temp, stack)
-		stack = temp
-	}
 	curFrame = entering
 	curSlot = curFrame.Zero()
 
@@ -320,8 +290,8 @@ unwind:
 	// If the slot reports that it's dirty, we want to propagate
 	// the changes upwards in the stack.
 	if curSlot.dirty {
-		if stackIdx > topIdx {
-			stack[stackIdx-1].Active().dirty = true
+		if stack.Depth() > 1 {
+			stack.Top(1).Active().dirty = true
 		}
 
 		// This switch statement is the inverse of the above. We'll fold the
@@ -376,17 +346,15 @@ nextSlot:
 	// unwind loop until we hit the top frame.
 	if curFrame.Idx == curFrame.Count || halting {
 		// If we've finished the bootstrap frame, we're done.
-		if stackIdx == topIdx {
+		if stack.Depth() == 1 {
 			// pprof says that this is measurably faster than repeatedly
 			// dereferencing the pointer.
 			z := *curFrame.Zero()
 			return z.typeData.TypeID, z.value, z.dirty, nil
 		}
 		// Save off the current frame so we can copy the data out.
-		returning = curFrame
-		// Pop a frame off of the stack and update local vars.
-		stackIdx--
-		curFrame = &stack[stackIdx]
+		returning = stack.Pop()
+		curFrame = stack.Top(0)
 		curSlot = curFrame.Active()
 		// We'll jump back to the unwinding code to finish the slot of the
 		// frame which is now on top.
