@@ -294,47 +294,51 @@ unwind:
 			stack.Top(1).Active().dirty = true
 		}
 
-		// This switch statement is the inverse of the above. We'll fold the
-		// returning frame into a replacement value for the current slot.
-		switch curSlot.typeData.Kind {
-		case KindStruct:
-			// Allocate a replacement instance of the struct.
-			next := curSlot.typeData.NewStruct()
-			// Perform a shallow copy to catch non-visitable fields.
-			curSlot.typeData.Copy(next, curSlot.value)
+		// If we were given a replacement value, there's no need to
+		// copy out any data.
+		if !curSlot.replaced {
+			// This switch statement is the inverse of the above. We'll fold the
+			// returning frame into a replacement value for the current slot.
+			switch curSlot.typeData.Kind {
+			case KindStruct:
+				// Allocate a replacement instance of the struct.
+				next := curSlot.typeData.NewStruct()
+				// Perform a shallow copy to catch non-visitable fields.
+				curSlot.typeData.Copy(next, curSlot.value)
 
-			// Copy the visitable fields into the new struct.
-			for i, f := range curSlot.typeData.Fields {
-				fPtr := Ptr(uintptr(next) + f.Offset)
-				f.targetData.Copy(fPtr, returning.Slot(i).value)
+				// Copy the visitable fields into the new struct.
+				for i, f := range curSlot.typeData.Fields {
+					fPtr := Ptr(uintptr(next) + f.Offset)
+					f.targetData.Copy(fPtr, returning.Slot(i).value)
+				}
+				curSlot.value = next
+
+			case KindPointer:
+				// Copy out the pointer to a local var so we don't stomp on it.
+				next := returning.Zero().value
+				curSlot.value = Ptr(&next)
+
+			case KindSlice:
+				// Create a new slice instance and populate the elements.
+				next := curSlot.typeData.NewSlice(returning.Count)
+				toHeader := (*reflect.SliceHeader)(next)
+				elemTd := curSlot.typeData.elemData
+
+				// Copy the elements across.
+				for i := 0; i < returning.Count; i++ {
+					toElem := Ptr(toHeader.Data + uintptr(i)*elemTd.SizeOf)
+					elemTd.Copy(toElem, returning.Slot(i).value)
+				}
+				curSlot.value = next
+
+			case KindInterface:
+				// Swap out the iface pointer just like the pointer case above.
+				next := returning.Zero()
+				curSlot.value = curSlot.typeData.IntfWrap(next.typeData.TypeID, next.value)
+
+			default:
+				panic(fmt.Errorf("unimplemented: %d", curSlot.typeData.Kind))
 			}
-			curSlot.value = next
-
-		case KindPointer:
-			// Copy out the pointer to a local var so we don't stomp on it.
-			next := returning.Zero().value
-			curSlot.value = Ptr(&next)
-
-		case KindSlice:
-			// Create a new slice instance and populate the elements.
-			next := curSlot.typeData.NewSlice(returning.Count)
-			toHeader := (*reflect.SliceHeader)(next)
-			elemTd := curSlot.typeData.elemData
-
-			// Copy the elements across.
-			for i := 0; i < returning.Count; i++ {
-				toElem := Ptr(toHeader.Data + uintptr(i)*elemTd.SizeOf)
-				elemTd.Copy(toElem, returning.Slot(i).value)
-			}
-			curSlot.value = next
-
-		case KindInterface:
-			// Swap out the iface pointer just like the pointer case above.
-			next := returning.Zero()
-			curSlot.value = curSlot.typeData.IntfWrap(next.typeData.TypeID, next.value)
-
-		default:
-			panic(fmt.Errorf("unimplemented: %d", curSlot.typeData.Kind))
 		}
 	}
 

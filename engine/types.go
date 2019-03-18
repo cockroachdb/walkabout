@@ -195,6 +195,7 @@ type Action struct {
 	call         ActionFn
 	dirty        bool
 	post         FacadeFn
+	replaced     bool
 	typeData     *TypeData
 	value        Ptr
 	valueType    TypeID
@@ -230,6 +231,7 @@ func (a *Action) apply(e *Engine, d Decision) error {
 			}
 		}
 		a.dirty = true
+		a.replaced = true
 		a.value = d.replacement
 	}
 	return nil

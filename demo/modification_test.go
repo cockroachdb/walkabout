@@ -24,9 +24,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cockroachdb/walkabout/demo/other"
-
 	l "github.com/cockroachdb/walkabout/demo"
+	"github.com/cockroachdb/walkabout/demo/other"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -99,6 +98,39 @@ func TestCycleBreak(t *testing.T) {
 	_, _, _ = d.WalkTarget(func(ctx l.TargetContext, x l.Target) (d l.TargetDecision) {
 		return
 	})
+}
+
+// Regression check to ensure that Halt().Replace() works.
+func TestHaltReplaceInner(t *testing.T) {
+	a := assert.New(t)
+	d, _ := l.NewContainer(false)
+	d2, changed, err := d.WalkTarget(func(ctx l.TargetContext, x l.Target) l.TargetDecision {
+		if _, ok := x.(*l.ByRefType); ok {
+			return ctx.Halt().Replace(&l.ByRefType{Val: "HaltReplace"})
+		}
+		return ctx.Continue()
+	})
+	if !a.NoError(err) {
+		return
+	}
+	a.True(changed)
+	a.NotEqual(d, d2)
+	a.Equal("HaltReplace", d2.ByRef.Val)
+}
+
+// Regression check to ensure that Halt().Replace() works at the top level.
+func TestHaltReplaceTop(t *testing.T) {
+	a := assert.New(t)
+	d, _ := l.NewContainer(false)
+	d2, changed, err := d.WalkTarget(func(ctx l.TargetContext, x l.Target) l.TargetDecision {
+		return ctx.Halt().Replace(&l.ContainerType{ByRef: l.ByRefType{Val: "HaltReplace"}})
+	})
+	if !a.NoError(err) {
+		return
+	}
+	a.True(changed)
+	a.NotEqual(d, d2)
+	a.Equal("HaltReplace", d2.ByRef.Val)
 }
 
 // TestInterfaceChange ensures that an interface context allows the
@@ -180,6 +212,28 @@ func TestMutations(t *testing.T) {
 		x, count := l.NewContainer(false)
 		checkMutations(t, x, count)
 	})
+}
+
+// Ensure that if Replace() is called from a Post() callback, we discard
+// any previously-existing field values.
+func TestPostReplaceIgnoresOldValues(t *testing.T) {
+	a := assert.New(t)
+	d, _ := l.NewContainer(false)
+	d2, changed, err := d.WalkTarget(func(ctx l.TargetContext, x l.Target) l.TargetDecision {
+		if _, ok := x.(*l.ContainerType); ok {
+			return ctx.Continue().Post(func(ctx l.TargetContext, x l.Target) l.TargetDecision {
+				return ctx.Continue().Replace(&l.ContainerType{ByRef: l.ByRefType{Val: "PostReplace"}})
+			})
+		}
+		return ctx.Continue()
+	})
+	if !a.NoError(err) {
+		return
+	}
+	a.True(changed)
+	a.NotEqual(d, d2)
+	a.Equal("PostReplace", d2.ByRef.Val)
+	a.Nil(d2.ByRefPtr)
 }
 
 func abstractWalk(x l.TargetAbstract) {
